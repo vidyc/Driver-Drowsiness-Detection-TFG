@@ -25,8 +25,4 @@ def compute_eye_closure(img, landmarks, upper_landmarks, lower_landmarks, center
     width = horizontal_distance
     eye_closure = height / width
 
-    print(f"HEIGHT: {height}")
-    print(f"WIDTH: {width}")
-    print(f"EAR: {eye_closure}")
-    print()
     return eye_closure
