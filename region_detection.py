@@ -90,36 +90,9 @@ def mediapipe_face_detection(input_image):
 
 
 def mediapipe_face_mesh(input_image):
-    drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
     with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5) as face_mesh:
-        # Convert the BGR image to RGB before processing.
-        results = face_mesh.process(cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB))
-
-        annotated_image = input_image.copy()
-        if results.multi_face_landmarks is not None:
-            for face_landmarks in results.multi_face_landmarks:
-                mp_drawing.draw_landmarks(
-                    image=annotated_image,
-                    landmark_list=face_landmarks,
-                    connections=mp_face_mesh.FACEMESH_TESSELATION,
-                    landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_drawing_styles
-                    .get_default_face_mesh_tesselation_style())
-                mp_drawing.draw_landmarks(
-                    image=annotated_image,
-                    landmark_list=face_landmarks,
-                    connections=mp_face_mesh.FACEMESH_CONTOURS,
-                    landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_drawing_styles
-                    .get_default_face_mesh_contours_style())
-                mp_drawing.draw_landmarks(
-                    image=annotated_image,
-                    landmark_list=face_landmarks,
-                    connections=mp_face_mesh.FACEMESH_IRISES,
-                    landmark_drawing_spec=None,
-                    connection_drawing_spec=mp_drawing_styles
-                    .get_default_face_mesh_iris_connections_style())
-        return annotated_image, results
+        input_image.flags.writeable = False
+        return face_mesh.process(cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB))
 
 
 def get_cropped_image_from_landmarks(img, landmark_coordinates, landmarks):
@@ -164,71 +137,24 @@ def get_ROI_images(image, landmark_coordinates):
 
     return ROI_images_dict
 
+def get_iris_metrics(image, face_landmarks, iris_indexes):
 
-def compare(item):
-    return item[2]
+    iris_metrics = {}
+    iris_metrics["centers"] = get_iris_centers(image, face_landmarks, iris_indexes)
+    iris_metrics["diameters"] = get_iris_diameters(image, face_landmarks, iris_indexes)
+    return iris_metrics
 
-def plot_landmark(img, landmarks, facial_area_obj):    
-    res_img = img.copy()
+def get_iris_centers(image, face_landmarks, iris_indexes):
+
+    height, width, _ = image.shape
+    iris_centers = {}
+
+    for iris, indexes in iris_indexes.items():
+        normalized_iris_center = face_landmarks.landmark[indexes[0]]
+        iris_center = (normalized_iris_center.x * width, normalized_iris_center.y * height)
+        iris_centers[iris] = iris_center
     
-    height, width, _ = img.shape
-    landmark_list_x = [ int(landmarks.landmark[id].x * width) for id, _ in list(facial_area_obj) ]
-    landmark_list_y = [ int(landmarks.landmark[id].y * height) for id, _ in list(facial_area_obj) ]
+    return iris_centers
 
-    left = min(landmark_list_x)
-    right = max(landmark_list_x)
-    left_ind = landmark_list_x.index(left)
-    right_ind = landmark_list_x.index(right)
-    eye_width = right - left
-    middle_point = left + eye_width/2
-
-    # get 6 horizontally nearest points to middle_point
-    distance_array = [ (idx, x_point, abs(middle_point - x_point)) for idx, x_point in enumerate(landmark_list_x) ]
-    distance_array.sort(key=compare)
-    nearest_points = [ landmark_list_y[idx] for idx, _, _ in distance_array[:6] ]
-
-    top = min(nearest_points)
-    bottom = max(nearest_points)
-    top_ind = landmark_list_y.index(top)
-    bottom_ind = landmark_list_y.index(bottom)
-    eye_height = bottom - top
-
-    print((top, left, right, bottom))
-    indices = (top_ind, left_ind, right_ind, bottom_ind)
-    print(indices)
-
-    for ind in indices:
-        x = int(landmark_list_x[ind])
-        y = int(landmark_list_y[ind])
-        point = (x, y)
-
-        #res_img = cv2.circle(res_img, point, radius=4, color=(0, 0, 255), thickness=-1)
-        #res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.4)
-
-    print(eye_width)
-    print(eye_height)
-
-    perclos = eye_height / eye_width
-    print(perclos)
-
+def get_iris_diameters(image, face_landmarks, iris_indexes):
     print()
-    ind = 0
-
-    print(list(facial_area_obj))
-
-    for source_idx, target_idx in list(facial_area_obj):
-        source = landmarks.landmark[source_idx]
-        target = landmarks.landmark[target_idx]
- 
-        relative_source = (int(img.shape[1] * source.x), int(img.shape[0] * source.y))
-        relative_target = (int(img.shape[1] * target.x), int(img.shape[0] * target.y))
-
-        point = ((relative_source[0]+relative_target[0]) // 2, (relative_source[1]+relative_target[1]) // 2)
-        point = relative_target
-        #res_img = cv2.line(res_img, relative_source, relative_target, (255, 255, 255), thickness = 2)
-        #res_img = cv2.circle(res_img, relative_source, radius=4, color=(0, 0, 255), thickness=-1)
-        #res_img = cv2.putText(res_img, f"{source_idx}", relative_source, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
-        #res_img = cv2.circle(res_img, relative_target, radius=4, color=(0, 0, 255), thickness=-1)
-        #res_img = cv2.putText(res_img, f"{target_idx}", relative_target, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
-        ind+=1
-    return res_img

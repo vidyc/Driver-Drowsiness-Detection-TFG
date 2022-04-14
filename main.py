@@ -9,15 +9,19 @@ max_num_frames = 5400
 if __name__ == "__main__":
     test_environment = TestEnvironment()
 
+    if True:
+        image = cv2.imread("images/test2.jpg")
+        naive_model.process_frame(image)
+
     if False:
         results = test_environment.test_open_close_eye_detection(naive_model)
         print(results["predictions"])
         print(results["performance_metrics"])
 
-    if True:
-        input_video = cv2.VideoCapture("images/Fold3_part2/33/0.mp4")
+    if False:
+        input_video = cv2.VideoCapture("images/Fold3_part2/31/10.mp4")
         
-        dummy_labels = [ 10 for _ in range(0, max_num_frames)]
+        dummy_labels = [ 10 for _ in range(0, 17004)]
         videos, labels = test_environment.prepare_NTHUDDD_dataset()
         
         results = test_environment.run_test(naive_model, input_video, dummy_labels)

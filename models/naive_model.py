@@ -1,5 +1,6 @@
 import cv2
 import random
+import time
 
 import region_detection as roi
 import image_analysis
@@ -7,33 +8,67 @@ import image_analysis
 input_type = "video"
 max_num_frames = 5400
 
-def process_frame(frame, config=None):
-    annotated_frame, face_landmarks = roi.mediapipe_face_mesh(frame)
+def draw_eye_landmarks(img, face_landmarks, eye_indexes: dict):
+    res_img = img.copy()
+    height, width, _ = res_img.shape
+    for eye, indexes in eye_indexes.items():
+        for eye_pos, landmarks in indexes.items():
+            for ind in landmarks:
+                point = face_landmarks.landmark[ind]
+                point = (int(point.x*width), int(point.y*height))
+                res_img = cv2.circle(res_img, point, radius=4, color=(0, 0, 255), thickness=-1)
+                res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
 
-    if face_landmarks.multi_face_landmarks is None:
+    return res_img
+
+def draw_iris_landmarks(img, face_landmarks, iris_indexes: dict):
+    res_img = img.copy()
+    height, width, _ = res_img.shape
+    for iris, indexes in iris_indexes.items():
+        for ind in indexes:
+            point = face_landmarks.landmark[ind]
+            point = (int(point.x*width), int(point.y*height))
+            res_img = cv2.circle(res_img, point, radius=4, color=(0, 0, 255), thickness=-1)
+            res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
+
+    return res_img
+
+def process_frame(frame, config=None):
+    faces = roi.mediapipe_face_mesh(frame)
+    face_landmarks = faces.multi_face_landmarks[0]
+
+    if face_landmarks is None:
+        print("didnt find face")
         return None
 
     left_eye_indexes = { "upper_landmarks": [158, 159], "lower_landmarks": [144, 145], "center_landmarks": [33, 133] }
     right_eye_indexes = { "upper_landmarks": [386, 385], "lower_landmarks": [374, 380], "center_landmarks": [263, 362] }
     eye_indexes = { "left_eye": left_eye_indexes, "right_eye": right_eye_indexes }
 
-    res_img = frame.copy()
-    height, width, _ = res_img.shape
+    right_iris_indexes = [ 468, 469, 470, 471, 472 ]
+    left_iris_indexes = [ 473, 474, 475, 476, 477 ]
+    iris_indexes = { "left_iris": left_iris_indexes, "right_iris": right_iris_indexes}
+
+    cv2.imshow("", draw_iris_landmarks(frame, face_landmarks, iris_indexes))
+    cv2.waitKey()
+    ROI_images = roi.get_ROI_images(frame, face_landmarks)
+    iris_centers = roi.get_iris_centers(frame, face_landmarks, iris_indexes)
+
+    height, width, _ = frame.shape
     for eye, indexes in eye_indexes.items():
         for eye_pos, landmarks in indexes.items():
             for ind in landmarks:
-                point = face_landmarks.multi_face_landmarks[0].landmark[ind]
+                point = face_landmarks.landmark[ind]
                 point = (int(point.x*width), int(point.y*height))
-                res_img = cv2.circle(res_img, point, radius=4, color=(0, 0, 255), thickness=-1)
-                res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
+                print(point)
 
-    ROI_images = roi.get_ROI_images(frame, face_landmarks.multi_face_landmarks[0])
-     
-    open_eyes = image_analysis.check_eyes_open(frame, face_landmarks.multi_face_landmarks[0], eye_indexes)
+    print(iris_centers)
+
+    open_eyes = image_analysis.check_eyes_open(frame, face_landmarks, eye_indexes)
 
     frame_metrics = {}
     # TODO: decidir si se computa la eye_closure como la media de los dos ojos
-    frame_metrics["ear"] = image_analysis.compute_eye_closure(frame, face_landmarks.multi_face_landmarks[0], **eye_indexes["left_eye"])
+    frame_metrics["ear"] = image_analysis.compute_eye_closure(frame, face_landmarks, **eye_indexes["left_eye"])
     frame_metrics["open_eyes"] = open_eyes
 
     return frame_metrics
@@ -58,7 +93,7 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict) -> dict:
             periodical_data["num_blinks"] += 1
     
     periodical_data["previous_frame_eye_state"] = periodical_data["current_eye_state"]
-    periodical_data["ear_values"].append(frame_metrics["ear"])
+    #periodical_data["ear_values"].append(frame_metrics["ear"])
     periodical_data["sum_ear"] += frame_metrics["ear"]
 
     return periodical_data
@@ -90,28 +125,35 @@ def inference_on_video(input_video):
                         "mean_frames_closed_eyes" : 0,
                         "num_blinks" : 0,
                         "previous_frame_eye_state" : None,
-                        "ear_values" : [], 
+                        #"ear_values" : [], 
                         "sum_ear": 0,
                        }
 
     debug = False
     predictions = []
-    valid_frame, frame = input_video.read()
     fps = input_video.get(cv2.CAP_PROP_FPS)
     print(fps)
     frames_per_minute = int(fps * 60)
+    start = time.time()
+    valid_frame, frame = input_video.read()
     while valid_frame: # and periodical_data["frame_count"] < max_num_frames:
         frame_metrics = process_frame(frame)
+        global_metrics = {}
+        drowsiness_state = None
         if frame_metrics is not None:
             periodical_data = update_periodical_data(frame_metrics, periodical_data)
             global_metrics = compute_global_metrics(frame_metrics, periodical_data, frames_per_minute)
             drowsiness_state = compute_drowsiness_state(frame_metrics, periodical_data, global_metrics, fps)
-            predictions.append(drowsiness_state)
+        
+        predictions.append(drowsiness_state)
         
         valid_frame, frame = input_video.read()
         
         if periodical_data["frame_count"] % 1000 == 0:
-            print(periodical_data["frame_count"])
+            print(f"{periodical_data['frame_count']}: {time.time() - start}")
+            print(periodical_data)
+            print(global_metrics)
+            print(drowsiness_state)
 
         if debug:
             cv2.imshow('', frame)

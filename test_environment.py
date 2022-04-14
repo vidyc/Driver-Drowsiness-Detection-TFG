@@ -28,7 +28,7 @@ class TestEnvironment:
 
     def run_test(self, alg_to_test, input_video, labels=None):  
         predictions = alg_to_test.inference_on_video(input_video)
-        performance_metrics = self.compute_predictions_quality(predictions, labels)
+        performance_metrics, failed_predictions = self.compute_predictions_quality(predictions, labels)
         return { "predictions": predictions, "performance_metrics": performance_metrics }
 
     def test_open_close_eye_detection(self, alg_to_test):
