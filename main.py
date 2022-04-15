@@ -1,5 +1,9 @@
-import cv2
 import random
+
+import pandas as pd
+import cv2
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import train_test_split
 
 from test_environment import TestEnvironment
 from models import naive_model
@@ -10,6 +14,18 @@ if __name__ == "__main__":
     test_environment = TestEnvironment()
 
     if True:
+        path = "images/Fold3_part2/31/"
+        #df = naive_model.create_dataset_from_videos(path)
+        df = pd.read_csv("test_dataset.csv")
+        data = df.drop("label", axis = 1)
+        labels = df["label"]
+        x_train, x_test, y_train, y_test = train_test_split(df, labels, test_size=0.4, random_state=1 )
+        knn = KNeighborsClassifier(n_neighbors=30)
+        knn.fit(x_train, y_train)
+        knn.predict(x_test)
+        #print(naive_model.knn(df, [[0.23, 0.05, 50, 0.04, 0], [0.23, 0.05, 50, 0.04, 0]], 10))
+
+    if False:
         image = cv2.imread("images/test2.jpg")
         naive_model.process_frame(image)
 

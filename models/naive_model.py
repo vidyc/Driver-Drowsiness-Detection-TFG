@@ -1,6 +1,14 @@
-import cv2
+import math
 import random
 import time
+import os
+from collections import Counter
+
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import train_test_split
+
+import cv2
+import pandas as pd
 
 import region_detection as roi
 import image_analysis
@@ -35,11 +43,12 @@ def draw_iris_landmarks(img, face_landmarks, iris_indexes: dict):
 
 def process_frame(frame, config=None):
     faces = roi.mediapipe_face_mesh(frame)
-    face_landmarks = faces.multi_face_landmarks[0]
 
-    if face_landmarks is None:
+    if faces is None or faces.multi_face_landmarks is None:
         print("didnt find face")
         return None
+    
+    face_landmarks = faces.multi_face_landmarks[0]
 
     left_eye_indexes = { "upper_landmarks": [158, 159], "lower_landmarks": [144, 145], "center_landmarks": [33, 133] }
     right_eye_indexes = { "upper_landmarks": [386, 385], "lower_landmarks": [374, 380], "center_landmarks": [263, 362] }
@@ -49,20 +58,8 @@ def process_frame(frame, config=None):
     left_iris_indexes = [ 473, 474, 475, 476, 477 ]
     iris_indexes = { "left_iris": left_iris_indexes, "right_iris": right_iris_indexes}
 
-    cv2.imshow("", draw_iris_landmarks(frame, face_landmarks, iris_indexes))
-    cv2.waitKey()
     ROI_images = roi.get_ROI_images(frame, face_landmarks)
     iris_centers = roi.get_iris_centers(frame, face_landmarks, iris_indexes)
-
-    height, width, _ = frame.shape
-    for eye, indexes in eye_indexes.items():
-        for eye_pos, landmarks in indexes.items():
-            for ind in landmarks:
-                point = face_landmarks.landmark[ind]
-                point = (int(point.x*width), int(point.y*height))
-                print(point)
-
-    print(iris_centers)
 
     open_eyes = image_analysis.check_eyes_open(frame, face_landmarks, eye_indexes)
 
@@ -98,13 +95,14 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict) -> dict:
 
     return periodical_data
 
-def compute_global_metrics(frame_metrics: dict, periodical_data: dict, frames_per_minute: int) -> dict:
+def compute_global_metrics(frame_metrics: dict, periodical_data: dict, fps: int, frames_per_minute: int) -> dict:
     global_metrics = {}
     
     global_metrics["mean_ear"] = periodical_data["sum_ear"] / periodical_data["frame_count"]
     global_metrics["blink_frequency"] = periodical_data["num_blinks"] / periodical_data["frame_count"]
     global_metrics["blinks_per_minute"] = periodical_data["num_blinks"] * frames_per_minute / periodical_data["frame_count"]
     global_metrics["perclos"] = periodical_data["closed_eye_frame_count"] / periodical_data["frame_count"]
+    global_metrics["current_time_closed_eyes"] = periodical_data["current_frames_closed_eyes"] / fps
 
     return global_metrics
 
@@ -131,7 +129,7 @@ def inference_on_video(input_video):
 
     debug = False
     predictions = []
-    fps = input_video.get(cv2.CAP_PROP_FPS)
+    fps = int(input_video.get(cv2.CAP_PROP_FPS))
     print(fps)
     frames_per_minute = int(fps * 60)
     start = time.time()
@@ -142,7 +140,7 @@ def inference_on_video(input_video):
         drowsiness_state = None
         if frame_metrics is not None:
             periodical_data = update_periodical_data(frame_metrics, periodical_data)
-            global_metrics = compute_global_metrics(frame_metrics, periodical_data, frames_per_minute)
+            global_metrics = compute_global_metrics(frame_metrics, periodical_data, fps, frames_per_minute)
             drowsiness_state = compute_drowsiness_state(frame_metrics, periodical_data, global_metrics, fps)
         
         predictions.append(drowsiness_state)
@@ -167,3 +165,95 @@ def inference_on_video(input_video):
     print(global_metrics)
 
     return predictions
+
+
+def obtain_metrics_from_video(input_video, period_length=1):
+    periodical_data = { 
+                        "frame_count" : 0,
+                        "closed_eye_frame_count" : 0,
+                        "current_frames_closed_eyes" : 0,
+                        "max_frames_closed_eyes" : 0,
+                        "mean_frames_closed_eyes" : 0,
+                        "num_blinks" : 0,
+                        "previous_frame_eye_state" : None,
+                        #"ear_values" : [], 
+                        "sum_ear": 0,
+                       }
+
+    metrics = []
+    remaining_frames_of_period = period_length
+    fps = int(input_video.get(cv2.CAP_PROP_FPS))
+    frames_per_minute = int(fps * 60)
+    start = time.time()
+    valid_frame, frame = input_video.read()
+    while valid_frame:
+        frame_metrics = process_frame(frame)
+        global_metrics = None
+        if frame_metrics is not None:
+            global_metrics = {}
+            # TODO: periodical data que tenga en cuenta info de los ultimos x minutos
+            periodical_data = update_periodical_data(frame_metrics, periodical_data)
+            remaining_frames_of_period -= 1
+
+            if remaining_frames_of_period <= 0:
+                global_metrics = compute_global_metrics(frame_metrics, periodical_data, fps, frames_per_minute)
+                remaining_frames_of_period = period_length
+                global_metrics["frame"] = periodical_data["frame_count"] - 1
+                metrics.append(global_metrics)
+        
+        valid_frame, frame = input_video.read()
+        if periodical_data["frame_count"] % 1000 == 0:
+            print(f"{periodical_data['frame_count']}: {time.time() - start}")
+
+    return metrics
+
+
+def create_dataset_from_video(input_video, label):
+
+    metric_list = obtain_metrics_from_video(input_video)
+    metric_dataframe = pd.DataFrame(metric_list)
+
+    labels = [label] * len(metric_list)
+    metric_dataframe["label"] = labels
+
+    return metric_dataframe
+
+
+def create_dataset_from_videos(path):
+    df_list = []
+    for filename in os.listdir(path):
+        file = os.path.join(path, filename)
+        print(file)
+        if os.path.isfile(file) and ".mp4" in filename:
+            video = cv2.VideoCapture(file)
+            frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+            if filename[0] == "0":
+                label = 0
+                df_list.append(create_dataset_from_video(video, label))
+            elif filename[0] == "1":
+                label = 10
+                df_list.append(create_dataset_from_video(video, label))
+    
+    df = pd.concat(df_list)
+    df.to_csv("cosa.csv")
+    return df
+
+
+def euclidean_distance(point1, point2):
+    point = point1[1:-1]
+    sum_squared_distance = sum(math.pow(point[i] - point2[i], 2) for i in range(len(point)))
+
+    return math.sqrt(sum_squared_distance)
+
+def train_knn_model(df, k):
+    # un test con el sujeto 31 de fold3...
+    # procesamos los videos 0 y 10 --> obtenemos un 90% de los frames =? 30k frames * 3 metricas = 90k metricas
+    # para cada uno de los 35k frames tenemos un label --> 0 o 10
+    # testeamos el rendimiento con el 10% que no hemos cogido
+    data = df.drop("label", axis = 1)
+    labels = df["label"]
+    x_train, x_test, y_train, y_test = train_test_split(data, labels, test_size=0.4, random_state=1 )
+    knn = KNeighborsClassifier(n_neighbors=k)
+    knn.fit(x_train, y_train)
+
+    return knn

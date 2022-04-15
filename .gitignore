@@ -1,6 +1,9 @@
 # image folder
 images/
 
+*.csv
+*.ipynb
+
 diario.txt
 
 *.prof
