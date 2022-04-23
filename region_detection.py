@@ -108,6 +108,8 @@ def get_cropped_image_from_landmarks(img, landmark_coordinates, landmarks):
     right = int(max(landmark_list[0]) * width)
     bottom = int(max(landmark_list[1]) * height)
 
+    print((top, left, right, bottom))
+
     min_distance = 10
     vertical_distance = bottom - top
     horizontal_distance = right - left

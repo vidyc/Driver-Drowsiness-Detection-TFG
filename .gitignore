@@ -4,6 +4,12 @@ images/
 *.csv
 *.ipynb
 
+# videos
+*.avi
+*.mp4
+*.mp3
+*.mov
+
 diario.txt
 
 *.prof

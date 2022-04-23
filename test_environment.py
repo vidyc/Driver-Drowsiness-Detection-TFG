@@ -25,6 +25,7 @@ class TestEnvironment:
         self.NTHUDDD_path = "images/Fold3_part2/"
         self.CEW_path = "images/dataset_B_FacialImages/"
         self.D3S_open_close_path = "images/D3S_dataset/Sub1/"
+        self.YAWNDD_path = "images/YAWNDD_dataset/"
 
     def run_test(self, alg_to_test, input_video, labels=None):  
         predictions = alg_to_test.inference_on_video(input_video)
@@ -37,43 +38,87 @@ class TestEnvironment:
         predictions_dict = {}
         performance_metrics_dict = {}
 
+        predictions = []
+        ind = 0
+        for image in images:
+
+            result = alg_to_test.process_frame(image)
+            
+            if result is not None:
+                predictions.append(result["open_eyes"])
+            else:
+                predictions.append(None)
+            
+            ind += 1
+
+        performance_metrics, failed_predictions = self.compute_predictions_quality(predictions, labels)
+        predictions_dict["CEW"] = predictions
+        performance_metrics_dict["CEW"] = performance_metrics
+
         if False:
-            predictions = []
+            images, labels, filenames = self.prepare_D3S_open_close_dataset()
+            
+            predictions2 = []
             ind = 0
             for image in images:
     
                 result = alg_to_test.process_frame(image)
                 
                 if result is not None:
-                    predictions.append(result["open_eyes"])
+                    predictions2.append(result["open_eyes"])
                 else:
-                    predictions.append(None)
+                    predictions2.append(None)
                 
                 ind += 1
 
-            performance_metrics, failed_predictions = self.compute_predictions_quality(predictions, labels)
-            predictions_dict["CEW"] = predictions
-            performance_metrics_dict["CEW"] = performance_metrics
+            performance_metrics2, failed_predictions2 = self.compute_predictions_quality(predictions2, labels)
+            predictions_dict["D3S"] = predictions2
+            performance_metrics_dict["D3S"] = performance_metrics2
+        return { "predictions": predictions_dict, "performance_metrics": performance_metrics_dict }
 
-        images, labels, filenames = self.prepare_D3S_open_close_dataset()
+    def prepare_yawn_dataset(self, root_folder):
+        labels = []
+        images = []
+        filenames = []
+        yawn_dir = os.path.join(root_folder, "yawn")
+        for filename in os.listdir(yawn_dir):
+            file = os.path.join(yawn_dir, filename)
+            if os.path.isfile(file) and ".jpg" in filename:
+                image = cv2.imread(file)
+                images.append(image)
+                labels.append(True)
+                filenames.append(file)
+
+        no_yawn_dir = os.path.join(root_folder, "no_yawn")
+        for filename in os.listdir(no_yawn_dir):
+            file = os.path.join(no_yawn_dir, filename)
+            if os.path.isfile(file) and ".jpg" in filename:
+                image = cv2.imread(file)
+                images.append(image)
+                labels.append(False)
+                filenames.append(file)
         
-        predictions2 = []
+        return images, labels, filenames
+
+    def test_yawn_detection(self, alg_to_test):
+        images, labels, filenames = self.prepare_yawn_dataset(self.YAWNDD_path)
+        
+        predictions = []
         ind = 0
         for image in images:
   
             result = alg_to_test.process_frame(image)
             
             if result is not None:
-                predictions2.append(result["open_eyes"])
+                predictions.append(result["yawn"])
             else:
-                predictions2.append(None)
+                predictions.append(None)
             
             ind += 1
 
-        performance_metrics2, failed_predictions2 = self.compute_predictions_quality(predictions2, labels)
-        predictions_dict["D3S"] = predictions2
-        performance_metrics_dict["D3S"] = performance_metrics2
-        return { "predictions": predictions_dict, "performance_metrics": performance_metrics_dict }
+        performance_metrics, failed_predictions = self.compute_predictions_quality(predictions, labels)
+        print(failed_predictions)
+        return { "predictions": predictions, "performance_metrics": performance_metrics }
 
     def prepare_D3S_open_close_dataset(self):
         labels = []
@@ -103,7 +148,7 @@ class TestEnvironment:
         labels = []
         images = []
         filenames = []
-        open_eyes_dir = os.path.join(self.CEW_path, "OpenFace")
+        open_eyes_dir = os.path.join(self.CEW_path, "Open")
         for filename in os.listdir(open_eyes_dir):
             file = os.path.join(open_eyes_dir, filename)
             if os.path.isfile(file) and ".jpg" in filename:
@@ -112,7 +157,7 @@ class TestEnvironment:
                 labels.append(True)
                 filenames.append(file)
 
-        closed_eyes_dir = os.path.join(self.CEW_path, "ClosedFace")
+        closed_eyes_dir = os.path.join(self.CEW_path, "Closed")
         for filename in os.listdir(closed_eyes_dir):
             file = os.path.join(closed_eyes_dir, filename)
             if os.path.isfile(file) and ".jpg" in filename:
@@ -134,7 +179,7 @@ class TestEnvironment:
 
         return video_dict, video_dict
 
-    def compute_predictions_quality(self, predictions, labels) -> dict:
+    def compute_predictions_quality(self, predictions, labels, true_val=True) -> dict:
         # TODO: compute accuracy, sensitivity, ...
         performance_metrics = {}   
         
@@ -142,11 +187,33 @@ class TestEnvironment:
 
         num_frames = len(predictions)
         num_hits = 0
+        num_true_positives = 0
+        num_true_negatives = 0
+        num_false_positives = 0
+        num_false_negatives = 0
         for i in range(0, num_frames):
             if predictions[i] == labels[i]:
                 num_hits += 1
+                if labels[i] == true_val:
+                    num_true_positives += 1
+                else:
+                    num_true_negatives += 1
             else:
+                if labels[i] == true_val:
+                    num_false_negatives += 1
+                else:
+                    num_false_positives += 1
                 failed_predictions.append(i)
 
         performance_metrics["accuracy"] = num_hits / num_frames
+
+        if (num_true_positives + num_false_positives) != 0:
+            performance_metrics["precision"] = num_true_positives / (num_true_positives + num_false_positives)
+        else:
+            performance_metrics["precision"] = None
+
+        if (num_true_positives + num_false_negatives) != 0:
+            performance_metrics["recall"] = num_true_positives / (num_true_positives + num_false_negatives)
+        else:
+            performance_metrics["recall"] = None
         return performance_metrics, failed_predictions

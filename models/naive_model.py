@@ -41,6 +41,21 @@ def draw_iris_landmarks(img, face_landmarks, iris_indexes: dict):
 
     return res_img
 
+def draw_landmarks(img, face_landmarks, indexes: frozenset):
+    res_img = img.copy()
+    height, width, _ = res_img.shape
+    for source, dest in list(roi.mp_face_mesh.FACEMESH_LIPS):
+        point1 = face_landmarks.landmark[source]
+        point1 = (int(point1.x * width), int(point1.y * height))
+        point2 = face_landmarks.landmark[dest]
+        point2 = (int(point2.x * width), int(point2.y * height))
+        res_img = cv2.circle(res_img, point1, 2, (255, 0, 0), -1)
+        res_img = cv2.putText(res_img, f"{source}", point1, cv2.FONT_HERSHEY_PLAIN, 0.8, (0, 255, 0))
+        res_img = cv2.circle(res_img, point2, 2, (255, 0, 0), -1)
+        res_img = cv2.putText(res_img, f"{dest}", point2, cv2.FONT_HERSHEY_PLAIN, 0.8, (0, 255, 0))
+
+    return res_img
+
 def process_frame(frame, config=None):
     faces = roi.mediapipe_face_mesh(frame)
 
@@ -58,15 +73,26 @@ def process_frame(frame, config=None):
     left_iris_indexes = [ 473, 474, 475, 476, 477 ]
     iris_indexes = { "left_iris": left_iris_indexes, "right_iris": right_iris_indexes}
 
-    ROI_images = roi.get_ROI_images(frame, face_landmarks)
-    iris_centers = roi.get_iris_centers(frame, face_landmarks, iris_indexes)
+    upper_lip_indexes = [ 81, 82, 13, 312, 311 ]
+    lower_lip_indexes = [ 178, 87, 14, 317, 402 ]
+    center_lip_indexes = [ 78, 308 ]
+    lip_indexes = { "upper_landmarks": upper_lip_indexes, "lower_landmarks": lower_lip_indexes, "center_landmarks": center_lip_indexes}
+    
+    #cv2.imshow("", res_img)
+    #cv2.waitKey()
+
+    #ROI_images = roi.get_ROI_images(frame, face_landmarks)
+    #iris_centers = roi.get_iris_centers(frame, face_landmarks, iris_indexes)
 
     open_eyes = image_analysis.check_eyes_open(frame, face_landmarks, eye_indexes)
+    yawn = image_analysis.check_yawn(frame, face_landmarks, lip_indexes)
 
     frame_metrics = {}
     # TODO: decidir si se computa la eye_closure como la media de los dos ojos
     frame_metrics["ear"] = image_analysis.compute_eye_closure(frame, face_landmarks, **eye_indexes["left_eye"])
     frame_metrics["open_eyes"] = open_eyes
+    frame_metrics["yawn"] = yawn
+    frame_metrics["mar"] = image_analysis.compute_mouth_closure(frame, face_landmarks, **lip_indexes)
 
     return frame_metrics
 
@@ -89,6 +115,9 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict) -> dict:
         if periodical_data["previous_frame_eye_state"] == "open":
             periodical_data["num_blinks"] += 1
     
+    if frame_metrics["yawn"]:
+        periodical_data["num_yawns"] += 1
+
     periodical_data["previous_frame_eye_state"] = periodical_data["current_eye_state"]
     #periodical_data["ear_values"].append(frame_metrics["ear"])
     periodical_data["sum_ear"] += frame_metrics["ear"]
@@ -103,6 +132,7 @@ def compute_global_metrics(frame_metrics: dict, periodical_data: dict, fps: int,
     global_metrics["blinks_per_minute"] = periodical_data["num_blinks"] * frames_per_minute / periodical_data["frame_count"]
     global_metrics["perclos"] = periodical_data["closed_eye_frame_count"] / periodical_data["frame_count"]
     global_metrics["current_time_closed_eyes"] = periodical_data["current_frames_closed_eyes"] / fps
+    global_metrics["yawns_per_minute"] = periodical_data["num_yawns"] * frames_per_minute / periodical_data["frame_count"]
 
     return global_metrics
 
@@ -113,8 +143,32 @@ def compute_drowsiness_state(frame_metrics: dict, periodical_data: dict, global_
         
     return 0
 
+def score(x_data, y_data):
+    predictions = []
+    num_hits = 0
+    num_samples = len(y_data)
 
-def inference_on_video(input_video):    
+    if num_samples <= 0:
+        return 0
+
+    for ind, sample in enumerate(x_data):
+        perclos = sample[0]
+        blinks_per_min = sample[1]
+        current_time_closed_eyes = sample[2]
+        pred = 0
+        if perclos > 0.15 or blinks_per_min < 10 or current_time_closed_eyes > 0.5:
+            pred = 1
+        
+        predictions.append(pred)
+        if pred == y_data[ind]:
+            num_hits += 1
+
+    return num_hits / num_samples
+        
+    
+
+
+def inference_on_video(input_video):  
     periodical_data = { 
                         "frame_count" : 0,
                         "closed_eye_frame_count" : 0,
@@ -122,6 +176,7 @@ def inference_on_video(input_video):
                         "max_frames_closed_eyes" : 0,
                         "mean_frames_closed_eyes" : 0,
                         "num_blinks" : 0,
+                        "num_yawns": 0,
                         "previous_frame_eye_state" : None,
                         #"ear_values" : [], 
                         "sum_ear": 0,
@@ -132,6 +187,12 @@ def inference_on_video(input_video):
     fps = int(input_video.get(cv2.CAP_PROP_FPS))
     print(fps)
     frames_per_minute = int(fps * 60)
+
+    width  = int(input_video.get(3))   # float `width`
+    height = int(input_video.get(4))  # float `height`
+    fourcc = cv2.VideoWriter_fourcc(*"DIVX")
+    out = cv2.VideoWriter("output_video.avi", fourcc, fps, (width, height))  
+
     start = time.time()
     valid_frame, frame = input_video.read()
     while valid_frame: # and periodical_data["frame_count"] < max_num_frames:
@@ -142,7 +203,19 @@ def inference_on_video(input_video):
             periodical_data = update_periodical_data(frame_metrics, periodical_data)
             global_metrics = compute_global_metrics(frame_metrics, periodical_data, fps, frames_per_minute)
             drowsiness_state = compute_drowsiness_state(frame_metrics, periodical_data, global_metrics, fps)
-        
+
+            edited_frame = frame.copy()
+            point = ( int(0), int(0.05 * height) )
+            for metric, value in periodical_data.items():
+                edited_frame = cv2.putText(edited_frame, f"{metric}: {value}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
+                point = (point[0], point[1] + int(0.05*height))
+            
+            for metric, value in global_metrics.items():
+                edited_frame = cv2.putText(edited_frame, f"{metric}: {value}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
+                point = (point[0], point[1] + int(0.05*height))
+
+            edited_frame = cv2.putText(edited_frame, f"prediction: {drowsiness_state}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
+            out.write(edited_frame)
         predictions.append(drowsiness_state)
         
         valid_frame, frame = input_video.read()
@@ -157,7 +230,7 @@ def inference_on_video(input_video):
             cv2.imshow('', frame)
             cv2.waitKey(0)
 
-    
+    out.release()
     print(frame_metrics)
     print()
     print(periodical_data)
@@ -175,6 +248,7 @@ def obtain_metrics_from_video(input_video, period_length=1):
                         "max_frames_closed_eyes" : 0,
                         "mean_frames_closed_eyes" : 0,
                         "num_blinks" : 0,
+                        "num_yawns" : 0,
                         "previous_frame_eye_state" : None,
                         #"ear_values" : [], 
                         "sum_ear": 0,
@@ -219,13 +293,17 @@ def create_dataset_from_video(input_video, label):
     return metric_dataframe
 
 
-def create_dataset_from_videos(path):
+def create_dataset_from_videos(path) -> list:
     df_list = []
     for filename in os.listdir(path):
         file = os.path.join(path, filename)
-        print(file)
-        if os.path.isfile(file) and ".mp4" in filename:
+        video_extensions = [ ".mp4", ".mov", ".avi", ".mp3" ]
+
+        if os.path.isdir(file):
+            df_list = df_list + create_dataset_from_videos(file)
+        elif os.path.isfile(file) and filename[-4:].lower() in video_extensions:
             video = cv2.VideoCapture(file)
+            print(file)
             frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
             if filename[0] == "0":
                 label = 0
@@ -234,9 +312,8 @@ def create_dataset_from_videos(path):
                 label = 10
                 df_list.append(create_dataset_from_video(video, label))
     
-    df = pd.concat(df_list)
-    df.to_csv("cosa.csv")
-    return df
+    #df = pd.concat(df_list)
+    return df_list
 
 
 def euclidean_distance(point1, point2):
