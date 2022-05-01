@@ -2,6 +2,8 @@ import os
 
 import cv2
 
+import inference as inf
+
 def get_all_videos_from_directory(directory: str, videos=None):
     videos = {}
     for filename in os.listdir(directory):
@@ -75,6 +77,17 @@ class TestEnvironment:
             predictions_dict["D3S"] = predictions2
             performance_metrics_dict["D3S"] = performance_metrics2
         return { "predictions": predictions_dict, "performance_metrics": performance_metrics_dict }
+
+    def test_open_close_eye_detection_videos(self, alg_to_test, features, videos, num_frames=2000, video_names=[]):
+        num_videos = len(videos)
+
+        if video_names == []:
+            for i in range(0, num_videos):
+                video_names.append(f"output{i}.avi")
+
+        for ind, video in enumerate(videos):
+            inf.inference_on_video(video, alg_to_test, features, video_names[ind], max_num_frames=num_frames)
+
 
     def prepare_yawn_dataset(self, root_folder):
         labels = []

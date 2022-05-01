@@ -159,4 +159,17 @@ def get_iris_centers(image, face_landmarks, iris_indexes):
     return iris_centers
 
 def get_iris_diameters(image, face_landmarks, iris_indexes):
-    print()
+    height, width, _ = image.shape
+    iris_diameters = {}
+
+    ## left
+    top_left = face_landmarks.landmark[470].y
+    bot_left = face_landmarks.landmark[472].y
+    iris_diameters["left"] = (bot_left - top_left) * height
+
+    ## right
+    top_right = face_landmarks.landmark[475].y
+    bot_right = face_landmarks.landmark[477].y
+    iris_diameters["right"] = (bot_right - top_right) * height
+    
+    return iris_diameters

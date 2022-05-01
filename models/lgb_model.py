@@ -29,7 +29,7 @@ def draw_eye_landmarks(img, face_landmarks, eye_indexes: dict):
                 point = face_landmarks.landmark[ind]
                 point = (int(point.x*width), int(point.y*height))
                 res_img = cv2.circle(res_img, point, radius=4, color=(0, 0, 255), thickness=-1)
-                res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
+                #res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
 
     return res_img
 
@@ -41,107 +41,23 @@ def draw_iris_landmarks(img, face_landmarks, iris_indexes: dict):
             point = face_landmarks.landmark[ind]
             point = (int(point.x*width), int(point.y*height))
             res_img = cv2.circle(res_img, point, radius=4, color=(0, 0, 255), thickness=-1)
-            res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
+            #res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
 
     return res_img
 
-def draw_landmarks(img, face_landmarks, indexes: frozenset):
+def draw_landmarks(img, face_landmarks, indexes):
     res_img = img.copy()
     height, width, _ = res_img.shape
-    for source, dest in list(roi.mp_face_mesh.FACEMESH_LIPS):
-        point1 = face_landmarks.landmark[source]
-        point1 = (int(point1.x * width), int(point1.y * height))
-        point2 = face_landmarks.landmark[dest]
-        point2 = (int(point2.x * width), int(point2.y * height))
-        res_img = cv2.circle(res_img, point1, 2, (255, 0, 0), -1)
-        res_img = cv2.putText(res_img, f"{source}", point1, cv2.FONT_HERSHEY_PLAIN, 0.8, (0, 255, 0))
-        res_img = cv2.circle(res_img, point2, 2, (255, 0, 0), -1)
-        res_img = cv2.putText(res_img, f"{dest}", point2, cv2.FONT_HERSHEY_PLAIN, 0.8, (0, 255, 0))
+    for ind in indexes:
+        point = face_landmarks.landmark[ind]
+        point = (int(point.x*width), int(point.y*height))
+        res_img = cv2.circle(res_img, point, radius=4, color=(0, 0, 255), thickness=-1)
+        res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.3)
 
     return res_img
 
-def process_frame(frame, config=None):
-    faces = roi.mediapipe_face_mesh(frame)
-
-    if faces is None or faces.multi_face_landmarks is None:
-        print("didnt find face")
-        return None
-    
-    face_landmarks = faces.multi_face_landmarks[0]
-
-    left_eye_indexes = { "upper_landmarks": [158, 159], "lower_landmarks": [144, 145], "center_landmarks": [33, 133] }
-    right_eye_indexes = { "upper_landmarks": [386, 385], "lower_landmarks": [374, 380], "center_landmarks": [263, 362] }
-    eye_indexes = { "left_eye": left_eye_indexes, "right_eye": right_eye_indexes }
-
-    right_iris_indexes = [ 468, 469, 470, 471, 472 ]
-    left_iris_indexes = [ 473, 474, 475, 476, 477 ]
-    iris_indexes = { "left_iris": left_iris_indexes, "right_iris": right_iris_indexes}
-
-    upper_lip_indexes = [ 81, 82, 13, 312, 311 ]
-    lower_lip_indexes = [ 178, 87, 14, 317, 402 ]
-    center_lip_indexes = [ 78, 308 ]
-    lip_indexes = { "upper_landmarks": upper_lip_indexes, "lower_landmarks": lower_lip_indexes, "center_landmarks": center_lip_indexes}
-    
-    #cv2.imshow("", res_img)
-    #cv2.waitKey()
-
-    #ROI_images = roi.get_ROI_images(frame, face_landmarks)
-    #iris_centers = roi.get_iris_centers(frame, face_landmarks, iris_indexes)
-
-    open_eyes = image_analysis.check_eyes_open(frame, face_landmarks, eye_indexes)
-    yawn = image_analysis.check_yawn(frame, face_landmarks, lip_indexes)
-
-    frame_metrics = {}
-    # TODO: decidir si se computa la eye_closure como la media de los dos ojos
-    frame_metrics["ear"] = image_analysis.compute_eye_closure(frame, face_landmarks, **eye_indexes["left_eye"])
-    frame_metrics["open_eyes"] = open_eyes
-    frame_metrics["yawn"] = yawn
-    frame_metrics["mar"] = image_analysis.compute_mouth_closure(frame, face_landmarks, **lip_indexes)
-
-    return frame_metrics
-
-
-def update_periodical_data(frame_metrics: dict, periodical_data: dict) -> dict:
-    periodical_data["frame_count"] += 1
-
-    if frame_metrics["open_eyes"]:
-        periodical_data["current_eye_state"] = "open"
-        
-        if periodical_data["current_frames_closed_eyes"] > periodical_data["max_frames_closed_eyes"]:
-            periodical_data["max_frames_closed_eyes"] = periodical_data["current_frames_closed_eyes"]
-        
-        periodical_data["current_frames_closed_eyes"] = 0
-    else:
-        periodical_data["current_eye_state"] = "closed"
-        periodical_data["closed_eye_frame_count"] += 1
-        periodical_data["current_frames_closed_eyes"] += 1
-
-        if periodical_data["previous_frame_eye_state"] == "open":
-            periodical_data["num_blinks"] += 1
-    
-    if frame_metrics["yawn"]:
-        periodical_data["num_yawns"] += 1
-
-    periodical_data["previous_frame_eye_state"] = periodical_data["current_eye_state"]
-    #periodical_data["ear_values"].append(frame_metrics["ear"])
-    periodical_data["sum_ear"] += frame_metrics["ear"]
-
-    return periodical_data
-
-def compute_global_metrics(frame_metrics: dict, periodical_data: dict, fps: int, frames_per_minute: int) -> dict:
-    global_metrics = {}
-    
-    global_metrics["mean_ear"] = periodical_data["sum_ear"] / periodical_data["frame_count"]
-    global_metrics["blink_frequency"] = periodical_data["num_blinks"] / periodical_data["frame_count"]
-    global_metrics["blinks_per_minute"] = periodical_data["num_blinks"] * frames_per_minute / periodical_data["frame_count"]
-    global_metrics["perclos"] = periodical_data["closed_eye_frame_count"] / periodical_data["frame_count"]
-    global_metrics["current_time_closed_eyes"] = periodical_data["current_frames_closed_eyes"] / fps
-    global_metrics["yawns_per_minute"] = periodical_data["num_yawns"] * frames_per_minute / periodical_data["frame_count"]
-
-    return global_metrics
-
-def compute_drowsiness_state(frame_metrics: dict, periodical_data: dict, global_metrics: dict, fps: int) -> dict:
-    x_data = np.array([ global_metrics["blink_frequency"], global_metrics["perclos"], global_metrics["current_time_closed_eyes"] ])
+def compute_drowsiness_state(frame_metrics, periodical_data, global_metrics: dict, fps) -> dict:
+    x_data = np.array([ global_metrics["perclos"], global_metrics["blink_frequency"], global_metrics["current_time_closed_eyes"] ])
     x_data = x_data.reshape(1, -1)
     prediction = model.predict(x_data)[0]
     if prediction == 1:
@@ -172,8 +88,43 @@ def score(x_data, y_data):
         
     
 
+def inference_on_dataset(input_video, df):
+    fps = int(input_video.get(cv2.CAP_PROP_FPS))
+    print(fps)
+    frames_per_minute = int(fps * 60)
 
-def inference_on_video(input_video):  
+    width  = int(input_video.get(3))   # float `width`
+    height = int(input_video.get(4))  # float `height`
+    fourcc = cv2.VideoWriter_fourcc(*"DIVX")
+    out = cv2.VideoWriter("output_video.avi", fourcc, fps, (width, height))
+    x_data = df[["perclos", "blink_frequency", "current_time_closed_eyes"]]
+    pred = [round(p) for p in model.predict(x_data)]
+    valid_frame, frame = input_video.read()
+    ind = 0
+    while valid_frame: # and periodical_data["frame_count"] < max_num_frames:
+        drowsiness_state = pred[ind]
+
+        edited_frame = frame.copy()
+        point = ( int(0), int(0.05 * height) )
+        for metric, value in periodical_data.items():
+            edited_frame = cv2.putText(edited_frame, f"{metric}: {value}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
+            point = (point[0], point[1] + int(0.05*height))
+        
+        for metric, value in global_metrics.items():
+            edited_frame = cv2.putText(edited_frame, f"{metric}: {value}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
+            point = (point[0], point[1] + int(0.05*height))
+
+            edited_frame = cv2.putText(edited_frame, f"prediction: {drowsiness_state}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
+            out.write(edited_frame)
+        
+        valid_frame, frame = input_video.read()
+        ind += 1
+
+    out.release()
+
+
+def inference_on_video(input_video, path="output_video.avi", max_num_frames=float('inf')):  
+    max_width = 1080
     periodical_data = { 
                         "frame_count" : 0,
                         "closed_eye_frame_count" : 0,
@@ -196,12 +147,14 @@ def inference_on_video(input_video):
     width  = int(input_video.get(3))   # float `width`
     height = int(input_video.get(4))  # float `height`
     fourcc = cv2.VideoWriter_fourcc(*"DIVX")
-    out = cv2.VideoWriter("output_video.avi", fourcc, fps, (width, height))  
+    out = cv2.VideoWriter(path, fourcc, fps, (width, height))  
+
+    font_scale = min(1, width / max_width)
 
     start = time.time()
     valid_frame, frame = input_video.read()
-    while valid_frame: # and periodical_data["frame_count"] < max_num_frames:
-        frame_metrics = process_frame(frame)
+    while valid_frame and periodical_data["frame_count"] < max_num_frames:
+        frame_metrics, drawn_frame = process_frame(frame, framecount=periodical_data["frame_count"])
         global_metrics = {}
         drowsiness_state = None
         if frame_metrics is not None:
@@ -209,17 +162,29 @@ def inference_on_video(input_video):
             global_metrics = compute_global_metrics(frame_metrics, periodical_data, fps, frames_per_minute)
             drowsiness_state = compute_drowsiness_state(frame_metrics, periodical_data, global_metrics, fps)
 
-            edited_frame = frame.copy()
+            info_to_show = {
+                "frame_count": periodical_data["frame_count"],
+                "closed_eye_frame_count": periodical_data["closed_eye_frame_count"],
+                "perclos": global_metrics["perclos"],
+                "current_frames_closed_eyes": periodical_data["current_frames_closed_eyes"],
+                "num_blinks": periodical_data["num_blinks"],
+                "blinks_per_minute": global_metrics["blinks_per_minute"],
+                "previous_eye_state": periodical_data["previous_frame_eye_state"],
+                "current_eye_state": periodical_data["current_eye_state"],
+                "right_EAR": frame_metrics["rear"],
+                "left_EAR": frame_metrics["lear"],
+                "num_yawns": periodical_data["num_yawns"],
+                "yawns_per_minute": global_metrics["yawns_per_minute"],
+                "prediction": drowsiness_state,
+            }
+
+            edited_frame = drawn_frame.copy()
+            #edited_frame = frame.copy()
             point = ( int(0), int(0.05 * height) )
-            for metric, value in periodical_data.items():
-                edited_frame = cv2.putText(edited_frame, f"{metric}: {value}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
-                point = (point[0], point[1] + int(0.05*height))
-            
-            for metric, value in global_metrics.items():
-                edited_frame = cv2.putText(edited_frame, f"{metric}: {value}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
+            for metric, value in info_to_show.items():
+                edited_frame = cv2.putText(edited_frame, f"{metric}: {value}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=font_scale)
                 point = (point[0], point[1] + int(0.05*height))
 
-            edited_frame = cv2.putText(edited_frame, f"prediction: {drowsiness_state}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1)
             out.write(edited_frame)
         predictions.append(drowsiness_state)
         
@@ -257,6 +222,8 @@ def obtain_metrics_from_video(input_video, period_length=1):
                         "previous_frame_eye_state" : None,
                         #"ear_values" : [], 
                         "sum_ear": 0,
+                        "sum_left_iris_diameter": 0,
+                        "sum_right_iris_diameter": 0,
                        }
 
     metrics = []
@@ -266,7 +233,7 @@ def obtain_metrics_from_video(input_video, period_length=1):
     start = time.time()
     valid_frame, frame = input_video.read()
     while valid_frame:
-        frame_metrics = process_frame(frame)
+        frame_metrics, drawn_frame = process_frame(frame)
         global_metrics = None
         if frame_metrics is not None:
             global_metrics = {}
@@ -304,6 +271,7 @@ def create_dataset_from_videos(path) -> list:
         file = os.path.join(path, filename)
         video_extensions = [ ".mp4", ".mov", ".avi", ".mp3" ]
 
+        ind = 0
         if os.path.isdir(file):
             df_list = df_list + create_dataset_from_videos(file)
         elif os.path.isfile(file) and filename[-4:].lower() in video_extensions:
@@ -312,11 +280,17 @@ def create_dataset_from_videos(path) -> list:
             frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
             if filename[0] == "0":
                 label = 0
-                df_list.append(create_dataset_from_video(video, label))
+                df = create_dataset_from_video(video, label)
+                df.to_csv(f"UTA_dataset_pupil/{ind}.csv")
+                df_list.append(df)
+                ind += 1
             elif filename[0] == "1":
                 label = 10
-                df_list.append(create_dataset_from_video(video, label))
-    
+                df = create_dataset_from_video(video, label)
+                df.to_csv(f"UTA_dataset_pupil/{ind}.csv")
+                df_list.append(df)
+                ind += 1
+
     #df = pd.concat(df_list)
     return df_list
 

@@ -19,10 +19,13 @@ from sklearn.model_selection import cross_val_score, train_test_split, cross_val
 from joblib import dump, load
 import lightgbm as lgb
 import numpy as np
+import yaml
 
 from test_environment import TestEnvironment
-from models import naive_model, knn_model
+from models import naive_model, knn_model, lgb_model
 import region_detection as roi
+import metrics_obtention as mo
+import train as t
 
 max_num_frames = 5400
 
@@ -40,6 +43,10 @@ def compute_accuracy(pred, actual):
 
 if __name__ == "__main__":
     test_environment = TestEnvironment()
+    with open("config.yaml", "r") as f:
+        config = yaml.load(f, Loader=yaml.loader.FullLoader)
+
+    features = config["train_inference"]["model_features"]    
 
     if False:
         vid, fps = load_video_float("Eulerian_Motion_Magnification-main/source/subway.mp4")
@@ -50,143 +57,90 @@ if __name__ == "__main__":
         pyramid_levels=3
         )
         out = cv2.VideoWriter('output.avi', -1, 20.0, (640,480))
-        type(vid)
+        type(vid) 
 
-
-    features = ["perclos", "blink_frequency", "current_time_closed_eyes"]
     if False:
-        # path = "images/UTA_dataset/"
 
-        # df_list = naive_model.create_dataset_from_videos(path)
+        path = "UTA_dataset_pupil/"
+        # 3 folds para train y 2 para validation
+        train_subjects = range(13, 31, 1)
+        train_dfs = []
+        for subject in train_subjects:
+            train_dfs.append(pd.read_csv(f"{path}{subject}_0.csv"))
+            train_dfs.append(pd.read_csv(f"{path}{subject}_10.csv"))
+        
+        test_subjects = range(13, 37, 1)
+        test_dfs = []
+        for subject in train_subjects:
+            test_dfs.append(pd.read_csv(f"{path}{subject}_0.csv"))
+            test_dfs.append(pd.read_csv(f"{path}{subject}_10.csv"))
+            if subject == 32 or subject == 49:
+                test_dfs.append(pd.read_csv(f"{path}{subject}_10_2.csv"))
 
-        # counter = 0
-        # for df in df_list:
-        #     df.to_csv(f"UTA_dataset/{counter}.csv")
-        #     counter += 1
+        train_df = pd.concat(train_dfs)
+        x_train = train_df[features]
+        y_train = train_df["label"]
+        y_train = y_train.replace(to_replace=10, value=1)
+        test_df = pd.concat(test_dfs)
+        x_test = test_df[features]
+        y_test = test_df["label"]
+        y_test = y_test.replace(to_replace=10, value=1)
 
-        def objective(trial, X, y):
-            param_grid = {
-                "device_type": trial.suggest_categorical("device_type", ['gpu']),
-                "n_estimators": trial.suggest_categorical("n_estimators", [10000]),
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
-                "num_leaves": trial.suggest_int("num_leaves", 20, 3000, step=20),
-                "max_depth": trial.suggest_int("max_depth", 3, 12),
-                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 200, 10000, step=100),
-                "lambda_l1": trial.suggest_int("lambda_l1", 0, 100, step=5),
-                "lambda_l2": trial.suggest_int("lambda_l2", 0, 100, step=5),
-                "min_gain_to_split": trial.suggest_float("min_gain_to_split", 0, 15),
-                "bagging_fraction": trial.suggest_float(
-                    "bagging_fraction", 0.2, 0.95, step=0.1
-                ),
-                "bagging_freq": trial.suggest_categorical("bagging_freq", [1]),
-                "feature_fraction": trial.suggest_float(
-                    "feature_fraction", 0.2, 0.95, step=0.1
-                ),
-            }
+        lgb_model = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            num_leaves=40,
+            num_iterations=1000,
+            learning_rate=0.01,
+            verbosity=1,
+            #early_stopping=20,
+        )
+        lgb_model.fit(x_train, y_train)
+        dump(lgb_model, "lgb_model_0.joblib")
+        y_pred = lgb_model.predict(x_test)
+        print(classification_report(y_test, y_pred))
 
-            num_splits = 4
-            cv = StratifiedKFold(n_splits=num_splits, shuffle=True, random_state=1121218)
+        num_hits = 0
+        num = 0
+        for ind in range(0, 1000):
+            y_pred = lgb_model.predict(x_test.iloc[ind].to_numpy().reshape(1, -1))
+            y_test1 = y_test.iloc[ind]
+            print(y_pred)
+            print(y_test1)
+            if y_pred == y_test1:
+                num_hits += 1
+            num += 1
 
-            cv_scores = np.empty(num_splits)
-            for idx, (train_idx, test_idx) in enumerate(cv.split(X, y)):
-                X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-                y_train, y_test = y[train_idx], y[test_idx]
+        print(num_hits/num)
 
-                model = lgb.LGBMClassifier(objective="binary", **param_grid)
-                model.fit(
-                    X_train,
-                    y_train,
-                    eval_set=[(X_test, y_test)],
-                    eval_metric="binary_logloss",
-                    early_stopping_rounds=100,
-                    # callbacks=[
-                    #     LightGBMPruningCallback(trial, "binary_logloss")
-                    # ],  # Add a pruning callback
-                )
-                preds = model.predict_proba(X_test)
-                cv_scores[idx] = log_loss(y_test, preds)
-
-            return np.mean(cv_scores)
-
-        df = pd.read_csv("big_df.csv")
+    if False:
+        df = pd.read_csv("UTA_dataset_pupil/big_df.csv")
+        old_df = pd.read_csv("UTA_dataset2/big_df.csv")
         df2 = df.groupby("label").mean()
         print(df2)
+        old_df2 = old_df.groupby("label").mean()
+        print(old_df2)
         #data = df.drop(["label", "frame", "blink_frequency", "mean_ear"], axis = 1)
         data = df[features]
         labels = df["label"]
         labels = labels.replace(to_replace=10, value=1)
-        x_train, x_test, y_train, y_test = train_test_split(data, labels, test_size=0.2, random_state=1)
-
+        old_data = old_df[features]
+        old_labels = old_df["label"]
+        old_labels = old_labels.replace(to_replace=10, value=1)
         knn = KNeighborsClassifier(n_neighbors=30)
-        knn.fit(x_train, y_train)
-        # lgb = lgb.LGBMClassifier(
-        #     boosting_type="dart",
-        #     num_leaves=4000,
-        #     num_iterations=1000,
-        #     learning_rate=0.01,
-        # )
-        start = time.time()
-        # lgb.fit(x_train, y_train)
-        #svm_classifier = svm.LinearSVC(max_iter=1000)
-
-        study = optuna.create_study(direction="minimize", study_name="LGBM Classifier")
-        func = lambda trial: objective(trial, data, labels)
-        study.optimize(func, n_trials=20)
-
-        best_params = {
-            "objective": "binary",
-            "metric": "accuracy",
-            "verbosity": -1,
-            "boosting_type": "dart",
-            "seed": 42
-        } 
-        best_params.update(study.best_params)
-        print(f"\tBest value (rmse): {study.best_value:.5f}")
-        print(f"\tBest params:")
-
-        for key, value in best_params.items():
-            print(f"\t\t{key}: {value}")
-
-        #svm_classifier.fit(x_train, y_train)
-        print(f"training took {time.time() - start} seconds")
-        
-        train_dataset = lgb.Dataset(
-            data=data,
-            label=labels
+        lgb_model = lgb.LGBMClassifier(
+             boosting_type="gbdt",
+             num_leaves=4000,
+             num_iterations=1000,
+             learning_rate=0.01,
         )
-        lgb_model = lgb.train(best_params,
-                              train_dataset,
-                              num_boost_round=4000,
-                              ) 
-
-        dump(lgb_model, "lgb_model.joblib")
-        dump(knn, "knn_model.joblib")
-        #dump(svm_classifier, "svm_model.joblib")
-        y_pred = lgb_model.predict(x_test)
-        y_pred2 = knn.predict(x_test)
-
-        print(classification_report(y_test, y_pred))
-        print(classification_report(y_test, y_pred2))
-
-        # accuracy, failed_predictions = compute_accuracy(y_pred, y_test.to_list())
-        # print(accuracy)
-        #print(accuracy)
-        #print([ i for i in failed_predictions ])
-        #print([ df.iloc[i, :] for i in failed_predictions ])
-        print("n")
-        # print(cross_val_score(knn, x_train, y_train, cv=4, scoring="accuracy"))
-        # print(cross_val_score(knn, x_train, y_train, cv=4, scoring="f1"))
-        # print(cross_val_score(knn, x_train, y_train, cv=4, scoring="recall"))
-        # print(cross_val_score(knn, x_train, y_train, cv=4, scoring="precision"))
-        #print(cross_validate(knn, x_train, y_train, cv=4, scoring=["accuracy", "f1", "recall", "precision"]))
-
-        #print(knn.score(x_test, y_test))
-        #print(lgb.score(x_test, y_test))
-        #print(svm_classifier.score(x_test, y_test))
+        print(cross_val_score(lgb_model, data, labels, cv=5, scoring="accuracy"))
+        print(cross_val_score(lgb_model, old_data, old_labels, cv=5, scoring="accuracy"))
+       # print(cross_val_score(lgb_model, data, labels, cv=5, scoring="accuracy"))
 
     if False:
-        image = cv2.imread("images/test2.jpg")
-        naive_model.process_frame(image)
+        image = cv2.imread("images/xi-yinping.jpg")
+        frame_metrics, image = mo.process_frame(image)
+        print(frame_metrics)
         cv2.imshow("", image)
         cv2.waitKey()
 
@@ -199,14 +153,30 @@ if __name__ == "__main__":
         print(results["performance_metrics"])
 
 
-    if False:
-        video = cv2.VideoCapture("images/UTA_dataset/Fold5_part1/49/0.mp4")
-        naive_model.inference_on_video(video)
+    if True:
+        lgb_model = load("lgb_model_0.joblib")
+        video_folder = "images/UTA_dataset/"
+        video_paths = [
+            "images/UTA_dataset/Fold1_part1/01/10.mov",
+            #"images/UTA_dataset/Fold2_part1/13/0.mp4",
+            #"images/UTA_dataset/Fold2_part1/17/10.mp4",
+            #"images/UTA_dataset/Fold2_part1/15/10.mp4",
+            #"images/UTA_dataset/Fold2_part1/17/0.mp4",
+            #"images/UTA_dataset/Fold5_part1/52/0.mov",
+            #"images/UTA_dataset/Fold5_part1/53/0.MOV",
+            #"images/UTA_dataset/Fold5_part1/49/0.mp4",
+            #"images/UTA_dataset/Fold3_part1/28/0.MOV",
+            #"images/UTA_dataset/Fold3_part1/28/10.MOV",
+            #"images/adrian/test.mp4"
+        ]
+        video_names = [ f"{path.split('/')[-2]}_{path.split('/')[-1][:-3]}avi" for path in video_paths ]
+        videos = [ cv2.VideoCapture(video_path) for video_path in video_paths ]
+        test_environment.test_open_close_eye_detection_videos(lgb_model, features, videos, num_frames=2000, video_names=video_names)
 
 
     if False:
         # add subject column to existing dataframes
-        path = "UTA_dataset/"
+        path = "UTA_dataset_pupils/"
         subject_dict = {
             # FOLD 1
             "0.csv": 13,
@@ -292,78 +262,27 @@ if __name__ == "__main__":
                 df.to_csv(df_name)
 
     if False:
-        path = "UTA_dataset2/"
+        path = "UTA_dataset_pupil/"
         df_list = []
         for filename in os.listdir(path):
-            file = os.path.join(path, filename)
-            if os.path.isfile(file) and ".csv" in filename:
-                df = pd.read_csv(file)
-                df_list.append(df)
+            if filename != "big_df.csv":
+                file = os.path.join(path, filename)
+                if os.path.isfile(file) and ".csv" in filename:
+                    df = pd.read_csv(file)
+                    df_list.append(df)
         
         df = pd.concat(df_list)
-        df.to_csv("UTA_dataset2/big_df.csv", index=False)
+        df.to_csv(f"{path}big_df.csv", index=False)
 
-    if True:
+    if False:
 
-        # video_path = "images/UTA_dataset/Fold5_part1/"
-        # df_list = knn_model.create_dataset_from_videos(video_path)
+        video_path = "images/UTA_dataset/"
+        df_list = lgb_model.create_dataset_from_videos(video_path)
         # name_list = ["49_0.csv", "49_10_1.csv", "49_10_2.csv", "51_0.csv", "51_10.csv", "52_0.csv", "52_10.csv", "53_0.csv", "53_10.csv", "54_0.csv", "54_10.csv"]
-
+        big_df = pd.concat(df_list)
+        big_df.to_csv(f"UTA_dataset_pupil/big_df")
         # for ind, df in enumerate(df_list):
         #     df.to_csv(f"UTA_dataset/{name_list[ind]}")
-
-        knn = load("knn_model.joblib")
-        lgb = load("lgb_model.joblib")
-        knn_scores = 0
-        lgb_scores = 0
-        naive_scores = 0
-        path = "UTA_dataset/"
-        df_list = []
-        study_cases = {}
-        for filename in os.listdir(path):
-            file = os.path.join(path, filename)
-            if os.path.isfile(file) and ".csv" in filename:
-                df = pd.read_csv(file)
-                print(file)
-                x_data = df[features]
-                y_data = df["label"].replace(to_replace=10, value=1)
-                #naive_score = naive_model.score(naive_x_data, y_data)
-                knn_pred = knn.predict(x_data)
-                lgb_pred = lgb.predict(x_data)
-                lgb_bin_preds = [ round(pred) for pred in lgb_pred ]
-                #print(lgb_bin_preds)
-                knn_score = knn.score(x_data, y_data)
-                lgb_score, _ = compute_accuracy(lgb_bin_preds, y_data)
-                #print(naive_score)
-                print(knn_score)
-                print(lgb_score)
-                if lgb_score < 0.6:
-                    study_cases[file] = lgb_score
-                df_list.append(df)
-        
-        print(study_cases)
-
-        df = pd.concat(df_list)
-        x_data = df[features].to_numpy()
-        y_data = df["label"].replace(to_replace=10, value=1)
-        
-        #naive_x_data = df[["perclos", "blinks_per_minute", "current_time_closed_eyes"]].to_numpy()
-
-        #naive_score = naive_model.score(naive_x_data, y_data)
-        knn_pred = knn.predict(x_data)
-        lgb_pred = lgb.predict(x_data)
-        lgb_bin_preds = [ round(pred) for pred in lgb_pred ]
-        #print(lgb_bin_preds)
-        knn_score = classification_report(y_data, knn_pred)
-        lgb_score = classification_report(y_data, lgb_bin_preds)
-        #print(naive_score)
-        print(knn_score)
-        print(lgb_score)
-
-        # print("ANSWERS")
-        # print(results["predictions"])
-        # print(dummy_labels)
-        # print(results["performance_metrics"])
 
 #TODO: a la hora de determinar los tests, podemos usar metricas de falsos positivos, 
 # falsos negativos y tener preferencia por los falsos positivos --> es mejor detectar un drowsy cuando no es cierto que al reves

@@ -4,11 +4,14 @@ images/
 *.csv
 *.ipynb
 
+*.joblib
+
 # videos
 *.avi
 *.mp4
 *.mp3
 *.mov
+*.MOV
 
 diario.txt
 
