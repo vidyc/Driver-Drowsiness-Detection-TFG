@@ -4,7 +4,6 @@ from ssl import cert_time_to_seconds
 import cv2
 import numpy as np
 
-eye_closure_threshold = 0.5
 mouth_yawn_threshold = 0.45
 
 cm_in_pixel = 0.0264583333
@@ -12,15 +11,17 @@ cm_in_pixel = 0.0264583333
 def pix_to_cm(pixels):
     return pixels * cm_in_pixel
 
-def check_eyes_open(img, landmarks, landmark_indexes, iris_diameters) -> bool:  
-    open_eyes = True
-    for eye_name, indexes in landmark_indexes.items():
-       # print(eye_name)
-        eye_closure = compute_eye_closure(img, landmarks, iris_diameter=iris_diameters[eye_name], **indexes)
-        open_eye = eye_closure >= eye_closure_threshold
-        open_eyes = open_eyes and open_eye
+def check_eyes_open(img, landmarks, landmark_indexes, iris_diameters, method, eye_closure_threshold) -> bool:  
+    if method == 1:
+        eye_closure = compute_eye_closure1(img, landmarks, iris_diameter=iris_diameters, **landmark_indexes)
+    elif method == 2:
+        eye_closure = compute_eye_closure2(img, landmarks, iris_diameter=iris_diameters, **landmark_indexes)
+    else:
+        eye_closure = compute_eye_closure3(img, landmarks, iris_diameter=iris_diameters, **landmark_indexes)
+    
+    open_eye = eye_closure >= eye_closure_threshold
 
-    return open_eyes
+    return open_eye
 
 
 def check_yawn(img, landmarks, landmark_indexes) -> bool:
@@ -28,21 +29,19 @@ def check_yawn(img, landmarks, landmark_indexes) -> bool:
     return mouth_height >= mouth_yawn_threshold
 
 
-def compute_eye_closure(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks, iris_diameter):
+def compute_eye_closure1(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks, iris_diameter):
     height, width, _ = img.shape
-    upper_landmarks_height = sum(landmarks.landmark[ind].y for ind in upper_landmarks)
-    lower_landmarks_height = sum(landmarks.landmark[ind].y for ind in lower_landmarks)
+    upper_landmarks_height = sum(landmarks.landmark[ind].y * height for ind in upper_landmarks)
+    lower_landmarks_height = sum(landmarks.landmark[ind].y * height for ind in lower_landmarks)
     horizontal_distance = abs(landmarks.landmark[center_landmarks[0]].x - landmarks.landmark[center_landmarks[1]].x) * width
-
+    
     height = (lower_landmarks_height - upper_landmarks_height)/len(upper_landmarks)
-    #print(f"HEIGHT: {height}")
     width = horizontal_distance
+
     eye_closure = height / width
+    return eye_closure
 
-    # print(height)
-    # print(width)
-    # print(f"FORMER EYE CLOSURE: {eye_closure}")
-
+def compute_eye_closure2(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks, iris_diameter):
     upper_landmarks = [ np.array([landmarks.landmark[ind].x, landmarks.landmark[ind].y, landmarks.landmark[ind].z ]) for ind in upper_landmarks ]
     lower_landmarks = [ np.array([landmarks.landmark[ind].x, landmarks.landmark[ind].y, landmarks.landmark[ind].z ]) for ind in lower_landmarks ]
     center_landmarks = [ np.array([landmarks.landmark[ind].x, landmarks.landmark[ind].y, landmarks.landmark[ind].z ]) for ind in center_landmarks ]
@@ -53,16 +52,19 @@ def compute_eye_closure(img, landmarks, upper_landmarks, lower_landmarks, center
         sum_of_vert_distances += np.linalg.norm(upper_landmarks[ind] - lower_landmarks[ind])
 
     sum_of_vert_distances /= length
-    #print(sum_of_vert_distances)
     horizontal_distance = np.linalg.norm(center_landmarks[0] - center_landmarks[1])
-    #print(horizontal_distance)
     eye_closure = sum_of_vert_distances / horizontal_distance
+    return eye_closure
 
-    #print(f"CURRENT EYE CLOSURE: {eye_closure}")
+def compute_eye_closure3(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks, iris_diameter):
+    height, width, _ = img.shape
+    upper_landmarks_height = sum(landmarks.landmark[ind].y for ind in upper_landmarks)
+    lower_landmarks_height = sum(landmarks.landmark[ind].y for ind in lower_landmarks)
+    
+    horizontal_distance = abs(landmarks.landmark[center_landmarks[0]].x - landmarks.landmark[center_landmarks[1]].x) * width
+    height = (lower_landmarks_height - upper_landmarks_height)/len(upper_landmarks)
 
-    #print(iris_diameter)
     eye_closure = min(1, height / iris_diameter)
-    #print(f"EYE OPENNESS: {e}")
     return eye_closure
 
 

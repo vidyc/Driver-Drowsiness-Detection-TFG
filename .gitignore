@@ -1,8 +1,9 @@
 # image folder
 images/
+saved_model*/
 
+*.jpg
 *.csv
-*.ipynb
 
 *.joblib
 

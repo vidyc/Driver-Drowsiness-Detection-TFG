@@ -1,8 +1,10 @@
 import os
 
 import cv2
+from setuptools import sic
 
 import inference as inf
+import metrics_obtention as mo
 
 def get_all_videos_from_directory(directory: str, videos=None):
     videos = {}
@@ -16,15 +18,13 @@ def get_all_videos_from_directory(directory: str, videos=None):
                 video = cv2.VideoCapture(video_path)
                 videos[filename][filename2] = video
 
-
     return videos
-
 
 class TestEnvironment:
 
     def __init__(self):
         self.max_num_frames = 20
-        self.NTHUDDD_path = "images/Fold3_part2/"
+        self.NTHUDDD_path = "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/"
         self.CEW_path = "images/dataset_B_FacialImages/"
         self.D3S_open_close_path = "images/D3S_dataset/Sub1/"
         self.YAWNDD_path = "images/YAWNDD_dataset/"
@@ -34,7 +34,7 @@ class TestEnvironment:
         performance_metrics, failed_predictions = self.compute_predictions_quality(predictions, labels)
         return { "predictions": predictions, "performance_metrics": performance_metrics }
 
-    def test_open_close_eye_detection(self, alg_to_test):
+    def test_open_close_eye_detection(self):
         images, labels, filenames = self.prepare_CEW_dataset()
 
         predictions_dict = {}
@@ -44,7 +44,7 @@ class TestEnvironment:
         ind = 0
         for image in images:
 
-            result = alg_to_test.process_frame(image)
+            result, _ = mo.process_frame(image)
             
             if result is not None:
                 predictions.append(result["open_eyes"])
@@ -78,7 +78,7 @@ class TestEnvironment:
             performance_metrics_dict["D3S"] = performance_metrics2
         return { "predictions": predictions_dict, "performance_metrics": performance_metrics_dict }
 
-    def test_open_close_eye_detection_videos(self, alg_to_test, features, videos, num_frames=2000, video_names=[]):
+    def test_open_close_eye_detection_videos(self, alg_to_test, features, videos, config, num_frames=2000, video_names=[]):
         num_videos = len(videos)
 
         if video_names == []:
@@ -86,7 +86,7 @@ class TestEnvironment:
                 video_names.append(f"output{i}.avi")
 
         for ind, video in enumerate(videos):
-            inf.inference_on_video(video, alg_to_test, features, video_names[ind], max_num_frames=num_frames)
+            inf.inference_on_video(video, alg_to_test, features, config, video_names[ind], max_num_frames=num_frames)
 
 
     def prepare_yawn_dataset(self, root_folder):
@@ -181,14 +181,68 @@ class TestEnvironment:
         
         return images, labels, filenames
 
+    def process_label_file_NTHUDDD(self, file):
+        with open(file, 'r') as f:
+            labels = f.read()
+        
+        labels = [ int(char) for char in labels ]
+        return labels
+
+    def get_videos_and_labels_NTHUDDD(self):
+        video_dict = {}
+        for subject in os.listdir(self.NTHUDDD_path):
+            file = os.path.join(self.NTHUDDD_path, subject)
+
+            if os.path.isdir(file):
+                video_dict[subject] = {}
+                for scenario in os.listdir(file):
+                    scenario_dir = os.path.join(file, scenario)
+                    video_dict[subject][scenario] = {
+                        "nonsleepy": {},
+                        "sleepy": {},
+                        "slowBlinkWithNodding": {},
+                        "yawning": {},
+                    }
+                    if os.path.isdir(file):
+                        video_dict[subject][scenario]["nonsleepy"]["labels"] = {}
+                        video_dict[subject][scenario]["sleepy"]["labels"] = {}
+                        video_dict[subject][scenario]["slowBlinkWithNodding"]["labels"] = {}
+                        video_dict[subject][scenario]["yawning"]["labels"] = {}
+                        for video in os.listdir(scenario_dir):
+                            video_path = os.path.join(scenario_dir, video)
+                            if video[-4:] == ".txt":
+                                labels = self.process_label_file_NTHUDDD(video_path)
+                                label_type = video.split("_")[2][:-4]
+                                if "nonsleepy" in video:
+                                    video_dict[subject][scenario]["nonsleepy"]["labels"][label_type] = labels
+                                elif "sleepy" in video:
+                                    video_dict[subject][scenario]["sleepy"]["labels"][label_type] = labels
+                                elif "slowBlinkWithNodding" in video:
+                                    video_dict[subject][scenario]["slowBlinkWithNodding"]["labels"][label_type] = labels
+                                elif "yawning" in video:
+                                    video_dict[subject][scenario]["yawning"]["labels"][label_type] = labels
+                            else:
+                                video_cap = cv2.VideoCapture(video_path)
+                                if "nonsleepy" in video:
+                                    video_dict[subject][scenario]["nonsleepy"]["video"] = video_cap
+                                elif "sleepy" in video:
+                                    video_dict[subject][scenario]["sleepy"]["video"] = video_cap
+                                elif "slowBlinkWithNodding" in video:
+                                    video_dict[subject][scenario]["slowBlinkWithNodding"]["video"] = video_cap
+                                elif "yawning" in video:
+                                    video_dict[subject][scenario]["yawning"]["video"] = video_cap
+
+        return video_dict
+
+
     def prepare_NTHUDDD_dataset(self):
         video_dict = get_all_videos_from_directory(self.NTHUDDD_path)
         
-        for subject, videos in video_dict.items():
-            print(subject)
-            for label, video in videos.items():
-                print(label)
-                print(video)
+        # for subject, videos in video_dict.items():
+        #     print(subject)
+        #     for label, video in videos.items():
+        #         print(label)
+        #         print(video)
 
         return video_dict, video_dict
 

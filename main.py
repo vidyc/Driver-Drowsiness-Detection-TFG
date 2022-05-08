@@ -22,7 +22,7 @@ import numpy as np
 import yaml
 
 from test_environment import TestEnvironment
-from models import naive_model, knn_model, lgb_model
+#from models import naive_model, knn_model, lgb_model
 import region_detection as roi
 import metrics_obtention as mo
 import train as t
@@ -138,17 +138,19 @@ if __name__ == "__main__":
        # print(cross_val_score(lgb_model, data, labels, cv=5, scoring="accuracy"))
 
     if False:
-        image = cv2.imread("images/xi-yinping.jpg")
-        frame_metrics, image = mo.process_frame(image)
+        video = cv2.VideoCapture("images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/001/noglasses/nonsleepyCombination.avi")
+        valid, image = video.read()
+        #image = cv2.imread("images/test_closed2.jpg")
+        frame_metrics, image, _ = mo.process_frame(image)
         print(frame_metrics)
         cv2.imshow("", image)
         cv2.waitKey()
 
     if False:
-        #results = test_environment.test_open_close_eye_detection(naive_model)
+        results = test_environment.test_open_close_eye_detection()
         #print(results["predictions"])
         #print(results["performance_metrics"])
-        results = test_environment.test_yawn_detection(naive_model)
+        #results = test_environment.test_yawn_detection(naive_model)
         print(results["predictions"])
         print(results["performance_metrics"])
 
@@ -157,7 +159,7 @@ if __name__ == "__main__":
         lgb_model = load("lgb_model_0.joblib")
         video_folder = "images/UTA_dataset/"
         video_paths = [
-            "images/UTA_dataset/Fold1_part1/01/10.mov",
+            #"images/DROZY_dataset/videos_i8/6-1.mp4",
             #"images/UTA_dataset/Fold2_part1/13/0.mp4",
             #"images/UTA_dataset/Fold2_part1/17/10.mp4",
             #"images/UTA_dataset/Fold2_part1/15/10.mp4",
@@ -167,11 +169,12 @@ if __name__ == "__main__":
             #"images/UTA_dataset/Fold5_part1/49/0.mp4",
             #"images/UTA_dataset/Fold3_part1/28/0.MOV",
             #"images/UTA_dataset/Fold3_part1/28/10.MOV",
-            #"images/adrian/test.mp4"
+            #"images/adrian/adrian3.mp4",
+            "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/005/glasses/sleepyCombination.avi"
         ]
-        video_names = [ f"{path.split('/')[-2]}_{path.split('/')[-1][:-3]}avi" for path in video_paths ]
+        video_names = [ f"{path.split('/')[-3]}_{path.split('/')[-2]}_{path.split('/')[-1][:-3]}avi" for path in video_paths ]
         videos = [ cv2.VideoCapture(video_path) for video_path in video_paths ]
-        test_environment.test_open_close_eye_detection_videos(lgb_model, features, videos, num_frames=2000, video_names=video_names)
+        test_environment.test_open_close_eye_detection_videos(lgb_model, features, videos, config["metric_obtention"], video_names=video_names)
 
 
     if False:
@@ -275,12 +278,16 @@ if __name__ == "__main__":
         df.to_csv(f"{path}big_df.csv", index=False)
 
     if False:
+        videos_and_labels = test_environment.get_videos_and_labels_NTHUDDD()
+        df_list = mo.create_dataset_from_videos_NTHU(videos_and_labels, target_folder="NTHUDDD_dataset/", config=config["metric_obtention"])
 
-        video_path = "images/UTA_dataset/"
-        df_list = lgb_model.create_dataset_from_videos(video_path)
+    if False:
+
+        video_path = "images/DROZY_dataset/videos_i8/1-1.mp4"
+        df = mo.create_dataset_from_video(cv2.VideoCapture(video_path), 4, config=config["metric_obtention"], label=1)
+        df.to_csv("testDROZY.csv")
         # name_list = ["49_0.csv", "49_10_1.csv", "49_10_2.csv", "51_0.csv", "51_10.csv", "52_0.csv", "52_10.csv", "53_0.csv", "53_10.csv", "54_0.csv", "54_10.csv"]
-        big_df = pd.concat(df_list)
-        big_df.to_csv(f"UTA_dataset_pupil/big_df")
+        #big_df.to_csv(f"UTA_dataset_pupil/big_df")
         # for ind, df in enumerate(df_list):
         #     df.to_csv(f"UTA_dataset/{name_list[ind]}")
 

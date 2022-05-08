@@ -21,7 +21,6 @@ import lightgbm as lgb
 import numpy as np
 
 from test_environment import TestEnvironment
-from models import naive_model, knn_model, lgb_model
 import region_detection as roi
 
 def train_knn_classifier(df, features, save=False):

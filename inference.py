@@ -1,8 +1,10 @@
+from email.policy import default
 import math
 import random
 import time
 import os
 from collections import Counter
+from collections import defaultdict
 
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
@@ -22,10 +24,13 @@ def inference_on_dataset(df, model, model_features):
     return [round(p) for p in model.predict(x_data)]
 
 
-def inference_on_video(input_video, model, model_features, path="output_video.avi", max_num_frames=float('inf'), period_length=1):  
+def inference_on_video(input_video, model, model_features, config, path="output_video.avi", max_num_frames=float('inf'), period_length=1):  
     max_width = 1080
-    frame_metrics = {}
-    global_metrics = {}
+    frame_metrics = {
+        "rear": 0,
+        "lear": 0,
+    }
+    global_metrics = defaultdict(lambda: 0)
     periodical_data = { 
                         "frame_count" : 0,
                         "closed_eye_frame_count" : 0,
@@ -39,6 +44,7 @@ def inference_on_video(input_video, model, model_features, path="output_video.av
                         "sum_ear": 0,
                         "sum_left_iris_diameter": 0,
                         "sum_right_iris_diameter": 0,
+                        "current_eye_state": None,
                        }
 
     debug = False
@@ -64,13 +70,13 @@ def inference_on_video(input_video, model, model_features, path="output_video.av
             obtain_global_metrics = True
             remaining_frames_of_period = period_length
 
-        current_metrics = mo.obtain_frame_metrics(frame, periodical_data, obtain_global_metrics, fps)
-        frame_metrics = current_metrics["frame_metrics"]
+        current_metrics = mo.obtain_frame_metrics(frame, periodical_data, config, obtain_global_metrics, fps)
         periodical_data = current_metrics["periodical_data"]
         
         # TODO: pasar un parametro o de alguna manera decirle a la funcion que metricas obtener
         if obtain_global_metrics:
-            if frame_metrics is not None:
+            if current_metrics["frame_metrics"] is not None:
+                frame_metrics = current_metrics["frame_metrics"]
                 global_metrics = current_metrics["global_metrics"]
                 selected_metrics = global_metrics
                 x_data = np.array(list({ metric:value for metric, value in selected_metrics.items() if metric in model_features }.values())).reshape(1, -1)
@@ -97,6 +103,8 @@ def inference_on_video(input_video, model, model_features, path="output_video.av
         }
 
         edited_frame = frame.copy()
+        if current_metrics["drawn_frame"] is not None:
+            edited_frame = current_metrics["drawn_frame"].copy()
         point = ( int(0), int(0.05 * height) )
         for metric, value in info_to_show.items():
             edited_frame = cv2.putText(edited_frame, f"{metric}: {value}", point, color=(255, 255, 255), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=font_scale)

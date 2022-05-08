@@ -1,18 +1,37 @@
 train_inference:
   model_features:
-    - perclos
-    - blink_frequency
-    - current_time_closed_eyes
     - mean_ear
+    - perclos
+    - blinks_per_minute
+    - current_time_closed_eyes
 
   model: 'lgb'
   optuna: False
 
 metric_obtention:
+  
+  eye_closure_method: 3
+  eye_closure_threshold: 0.4
+
   min_eye_vertical_distance: 10
   eye_image_size: 227
   period_length: 1
   min_num_frames: 1800
+  
+  subjects:
+    - '001'
+  scenarios:
+    - glasses
+    - night_noglasses
+    - nightglasses
+    - noglasses
+    - sunglasses
+  states:
+    - nonsleepy
+    - sleepy
+    - slowBlinkWithNodding
+    - yawning
+
   metrics_to_obtain:
     - frame_count
     - mean_ear
@@ -20,6 +39,7 @@ metric_obtention:
     - closed_eye_frame_count
     - current_time_closed_eyes
     - blink_frequency
+    - mean_blink_time
     - blinks_per_minute
     - num_blinks
     - num_yawns
