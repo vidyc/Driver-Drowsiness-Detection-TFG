@@ -2,30 +2,28 @@ import random
 import time
 import pickle
 import os
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 
 import pandas as pd
 import cv2
-import optuna  # pip install optuna
-from optuna.integration import LightGBMPruningCallback
-from sklearn.metrics import log_loss
-from sklearn.model_selection import StratifiedKFold
-from sklearn import svm
-from sklearn.metrics import classification_report
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import cross_val_score, train_test_split, cross_validate
-#import eulerian_magnification as em
-#from eulerian_magnification.io import load_video_float
+# import optuna  # pip install optuna
+# from optuna.integration import LightGBMPruningCallback
+# from sklearn.metrics import log_loss
+# from sklearn.model_selection import StratifiedKFold
+# from sklearn import svm
+# from sklearn.metrics import classification_report
+# from sklearn.neighbors import KNeighborsClassifier
+# from sklearn.model_selection import cross_val_score, train_test_split, cross_validate
 from joblib import dump, load
 import lightgbm as lgb
 import numpy as np
 import yaml
 
 from test_environment import TestEnvironment
-#from models import naive_model, knn_model, lgb_model
+import inference
 import region_detection as roi
 import metrics_obtention as mo
-import train as t
+# import train as t
 
 max_num_frames = 5400
 
@@ -138,10 +136,10 @@ if __name__ == "__main__":
        # print(cross_val_score(lgb_model, data, labels, cv=5, scoring="accuracy"))
 
     if False:
-        video = cv2.VideoCapture("images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/001/noglasses/nonsleepyCombination.avi")
-        valid, image = video.read()
-        #image = cv2.imread("images/test_closed2.jpg")
-        frame_metrics, image, _ = mo.process_frame(image)
+        # video = cv2.VideoCapture("images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/001/noglasses/nonsleepyCombination.avi")
+        # valid, image = video.read()
+        image = cv2.imread("images/test2.jpg")
+        frame_metrics, image, _ = mo.process_frame(image, config["metric_obtention"])
         print(frame_metrics)
         cv2.imshow("", image)
         cv2.waitKey()
@@ -154,9 +152,13 @@ if __name__ == "__main__":
         print(results["predictions"])
         print(results["performance_metrics"])
 
+    if False:
+        lgb_model = load("lgb_model_003.joblib")
+        inference.inference_on_webcam(lgb_model, features, config["metric_obtention"])
 
-    if True:
-        lgb_model = load("lgb_model_0.joblib")
+    if False:
+        dlib = True
+        lgb_model = load("lgb_model_003.joblib")
         video_folder = "images/UTA_dataset/"
         video_paths = [
             #"images/DROZY_dataset/videos_i8/6-1.mp4",
@@ -169,115 +171,21 @@ if __name__ == "__main__":
             #"images/UTA_dataset/Fold5_part1/49/0.mp4",
             #"images/UTA_dataset/Fold3_part1/28/0.MOV",
             #"images/UTA_dataset/Fold3_part1/28/10.MOV",
-            #"images/adrian/adrian3.mp4",
-            "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/005/glasses/sleepyCombination.avi"
+            # "images/adrian/adrian3.mp4",
+            # "images/adrian/head_pose.mp4",
+            # "images/adrian/new_blink.mp4",
+            # "images/adrian/ducha_fria.mp4",
+            # "images/adrian/yarify.mp4",
+            #"images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/036/glasses/sleepyCombination.avi",
+            "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/013/noglasses/slowBlinkWithNodding.avi",
+            # "images/NTHUDDD_dataset/Testing_Dataset/017_noglasses_mix.mp4",
+            # "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Evaluation Dataset/022/022_noglasses_mix.mp4",
         ]
-        video_names = [ f"{path.split('/')[-3]}_{path.split('/')[-2]}_{path.split('/')[-1][:-3]}avi" for path in video_paths ]
+        video_names = [ f"{dlib}{path.split('/')[-3]}_{path.split('/')[-2]}_{path.split('/')[-1][:-3]}avi" for path in video_paths ]
         videos = [ cv2.VideoCapture(video_path) for video_path in video_paths ]
-        test_environment.test_open_close_eye_detection_videos(lgb_model, features, videos, config["metric_obtention"], video_names=video_names)
+        test_environment.test_open_close_eye_detection_videos(lgb_model, features, videos, config["metric_obtention"], num_frames=2000, video_names=video_names)
 
-
-    if False:
-        # add subject column to existing dataframes
-        path = "UTA_dataset_pupils/"
-        subject_dict = {
-            # FOLD 1
-            "0.csv": 13,
-            "1.csv": 13,
-            "2.csv": 14,
-            "3.csv": 14,
-            "4.csv": 15,
-            "5.csv": 15,
-            "6.csv": 16,
-            "7.csv": 16,
-            "8.csv": 17,
-            "9.csv": 17,
-            "10.csv": 18,
-            "11.csv": 18,
-            # FOLD 2
-            "12.csv": 19,
-            "13.csv": 19,
-            "14.csv": 20,
-            "15.csv": 20,
-            "16.csv": 21,
-            "17.csv": 21,
-            "18.csv": 22,
-            "19.csv": 22,
-            "20.csv": 23,
-            "21.csv": 23,
-            "22.csv": 24,
-            "23.csv": 24,
-            # FOLD 3
-            "24.csv": 25,
-            "25.csv": 25,
-            "26.csv": 26,
-            "27.csv": 26,
-            "28.csv": 27,
-            "29.csv": 27,
-            "30.csv": 28,
-            "31.csv": 28,
-            "32.csv": 29,
-            "33.csv": 29,
-            "34.csv": 30,
-            "35.csv": 30,
-            # FOLD 4
-            "36.csv": 31,
-            "37.csv": 31,
-            "38.csv": 32,
-            "39.csv": 32,
-            "40.csv": 32,
-            "41.csv": 33,
-            "42.csv": 33,
-            "43.csv": 34,
-            "44.csv": 34,
-            "45.csv": 35,
-            "46.csv": 35,
-            "47.csv": 36,
-            "48.csv": 36,
-            # FOLD 5
-            "49_0.csv": 49,
-            "49_10_1.csv": 49,
-            "49_10_2.csv": 49, 
-            "50_0.csv": 50,
-            "50_10.csv": 50,
-            "51_0.csv": 51, 
-            "51_10.csv": 51,
-            "52_0.csv": 52,
-            "52_10.csv": 52, 
-            "53_0.csv": 53,
-            "53_10.csv": 53,
-            "54_0.csv": 54, 
-            "54_10.csv": 54,         
-        }
-        df_list = []
-        suffix_list = ["0", "10", "10_2"]
-        sub_ind = 0
-        count_dict = defaultdict(lambda: -1)
-        for filename in os.listdir(path):
-            file = os.path.join(path, filename)
-            if os.path.isfile(file) and ".csv" in filename:
-                df = pd.read_csv(file)
-                subject = subject_dict[filename]
-                count_dict[subject] += 1
-                df["subject"] = subject_dict[filename]
-                df_list.append(df)
-                df_name = f"UTA_dataset2/{subject_dict[filename]}_{suffix_list[count_dict[subject]]}.csv"
-                df.to_csv(df_name)
-
-    if False:
-        path = "UTA_dataset_pupil/"
-        df_list = []
-        for filename in os.listdir(path):
-            if filename != "big_df.csv":
-                file = os.path.join(path, filename)
-                if os.path.isfile(file) and ".csv" in filename:
-                    df = pd.read_csv(file)
-                    df_list.append(df)
-        
-        df = pd.concat(df_list)
-        df.to_csv(f"{path}big_df.csv", index=False)
-
-    if False:
+    if True:
         videos_and_labels = test_environment.get_videos_and_labels_NTHUDDD()
         df_list = mo.create_dataset_from_videos_NTHU(videos_and_labels, target_folder="NTHUDDD_dataset/", config=config["metric_obtention"])
 

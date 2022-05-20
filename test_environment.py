@@ -78,7 +78,7 @@ class TestEnvironment:
             performance_metrics_dict["D3S"] = performance_metrics2
         return { "predictions": predictions_dict, "performance_metrics": performance_metrics_dict }
 
-    def test_open_close_eye_detection_videos(self, alg_to_test, features, videos, config, num_frames=2000, video_names=[]):
+    def test_open_close_eye_detection_videos(self, alg_to_test, features, videos, config, num_frames=None, video_names=[]):
         num_videos = len(videos)
 
         if video_names == []:
@@ -86,7 +86,10 @@ class TestEnvironment:
                 video_names.append(f"output{i}.avi")
 
         for ind, video in enumerate(videos):
-            inf.inference_on_video(video, alg_to_test, features, config, video_names[ind], max_num_frames=num_frames)
+            if num_frames is not None:
+                inf.inference_on_video(video, alg_to_test, features, config, video_names[ind], max_num_frames=num_frames)
+            else:
+                inf.inference_on_video(video, alg_to_test, features, config, video_names[ind])
 
 
     def prepare_yawn_dataset(self, root_folder):

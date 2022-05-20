@@ -1,9 +1,22 @@
 # image folder
 images/
 saved_model*/
+pose_model*/
 
 *.jpg
+*.png
+*.bin
+*.mapping
+*.xml
+*.dat
+*.prototxt
+*.pth
+*.pt
 *.csv
+*.onnx
+*.pb
+*.caffemodel
+
 
 *.joblib
 

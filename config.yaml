@@ -1,17 +1,36 @@
 train_inference:
   model_features:
-    - mean_ear
+    # - mean_ear
+    - mean_blink_time
     - perclos
-    - blinks_per_minute
+    # - blinks_per_minute
     - current_time_closed_eyes
+    - yawns_per_minute
+    - head_nods_per_minute
 
   model: 'lgb'
   optuna: False
 
 metric_obtention:
   
-  eye_closure_method: 3
-  eye_closure_threshold: 0.4
+  eye_closure_method: 1
+  eye_closure_threshold: 0.2
+  main_threshold_perc: 0.45
+  gray_zone_perc: 0.1
+
+  head_nod_threshold: 45
+  head_nod_threshold_perc: 0.7
+  head_nod_y_min_threshold: 0.1
+  num_frames_nose_tip_y: 100
+  num_frames_new_head_nod: 15
+
+  num_frames_dynamic_avg: 1800
+  num_frames_lag_ignore: 15
+
+  mouth_yawn_threshold: 0.75
+  yawn_y_min_threshold: 0.1
+  num_frames_mouth_top_y: 100
+  num_frames_new_yawn: 15
 
   min_eye_vertical_distance: 10
   eye_image_size: 227
@@ -20,12 +39,19 @@ metric_obtention:
   
   subjects:
     - '001'
+    - '008'
+    - '009'
+    - '013'
+    - '023'
+    - '034'
+    - '035'
+    - '036'
   scenarios:
-    - glasses
-    - night_noglasses
-    - nightglasses
+    # - glasses
+    # - night_noglasses
+    # - nightglasses
     - noglasses
-    - sunglasses
+    # - sunglasses
   states:
     - nonsleepy
     - sleepy
@@ -33,6 +59,11 @@ metric_obtention:
     - yawning
 
   metrics_to_obtain:
+    - ear
+    - mar
+    - yaw
+    - pitch
+    - nose_tip_y
     - frame_count
     - mean_ear
     - perclos
@@ -45,3 +76,5 @@ metric_obtention:
     - num_yawns
     - yawns_per_minute
     - mean_left_iris_diameter
+    - head_nod_count
+    - head_nods_per_minute
