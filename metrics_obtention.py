@@ -1,7 +1,7 @@
-from lib2to3.pgen2 import driver
 import math
 import random
 import time
+import copy
 import os
 from collections import Counter
 
@@ -16,6 +16,46 @@ import pandas as pd
 
 import region_detection as roi
 import image_analysis
+
+periodical_data_initial_state = { 
+                    "frame_count" : 0,
+                    "closed_eye_frame_count" : 0,
+                    "closed_eye_frame_values": [],
+                    "current_frames_closed_eyes" : 0,
+                    "previous_current_frames_closed_eyes": 0,
+                    "max_frames_closed_eyes" : 0,
+                    "mean_frames_closed_eyes" : 0,
+                    "num_blinks" : 0,
+                    "blink_values": [],
+                    "previous_frame_mouth_state": None,
+                    "previous_frame_eye_state" : None,
+                    "previous2_frame_eye_state" : None,
+                    "ear_values" : [], 
+                    "sum_ear": 0,
+                    "sum_first_ear": 0,
+                    "sum_left_iris_diameter": 0,
+                    "sum_right_iris_diameter": 0,
+                    "current_eye_state": None,
+                    "head_nod_total_frame_count": 0,
+                    "previous_head_nod_state": False,
+                    "head_nod_last_frame": -1000,
+                    "head_nod_count": 0,
+                    "head_nod_values": [],
+                    "sum_first_pitch": 0,
+                    "pitch_values": [],
+                    "yaw_values": [],
+                    "yawn_total_frame_count": 0,
+                    "previous_yawn_state": False,
+                    "yawn_last_frame": -1000,
+                    "num_yawns" : 0,
+                    "yawn_values": [],
+                    "mar_values": [],
+                    "nose_tip_y_values": [],
+                    "mouth_top_y_values": [],
+                    "sum_first_mouth_width": 0,
+                    "mean_first_ear": 0,
+                    "mean_first_pitch": None,
+                    }
 
 
 # tf_model = tf.keras.models.load_model('saved_model7/my_model')
@@ -84,7 +124,7 @@ def draw_iris_landmarks(img, face_landmarks, iris_indexes: dict):
 
     return res_img
 
-def process_frame(frame, config, mean_iris_props=None, mean_first_ear=None, mean_first_pitch=None, last_pitch_values=None, last_yaw_values=None, last_mar_values=None, last_ear_values=None, nose_tip_y_values=None, mouth_top_y_values=None, previous_eye_state=None, framecount=None):
+def process_frame(frame, config, eyes=True, mouth=True, head=True, last_pose_angles=None, mean_iris_props=None, mean_first_ear=None, mean_first_pitch=None, last_pitch_values=None, last_yaw_values=None, last_mar_values=None, last_ear_values=None, nose_tip_y_values=None, mouth_top_y_values=None, previous_eye_state=None, framecount=None):
     frame_height, frame_width, _ = frame.shape
     # roi.opencv_detect_faces(frame)
 
@@ -130,6 +170,7 @@ def process_frame(frame, config, mean_iris_props=None, mean_first_ear=None, mean
     if faces is None or faces.multi_face_landmarks is None:
         # print("Mediapipe didnt find face. Trying with dnn...")
         # print(framecount)
+        return None, drawn_frame, None
         found_face, facebox, drawn_frame = roi.dnn_face_detection(frame, frame.copy())
 
         if not found_face:
@@ -146,6 +187,7 @@ def process_frame(frame, config, mean_iris_props=None, mean_first_ear=None, mean
     if dnn:
         return None, drawn_frame, None
     else:
+        ## FACE BOUNDING BOX ################################################################
         num_landmarks = len(face_landmarks)
         width_landmarks = [ face_landmarks[i].x for i in range(0, num_landmarks) ]
         height_landmarks = [ face_landmarks[i].y for i in range(0, num_landmarks) ]
@@ -163,125 +205,16 @@ def process_frame(frame, config, mean_iris_props=None, mean_first_ear=None, mean
         x1 = int(right*frame_width)
         y1 = int(bot*frame_height)
 
-        # pose_angle_dict, drawn_frame = roi.estimate_head_pose(frame, drawn_frame, face_landmarks, debug=False)
-        pose_angle_dict, drawn_frame = roi.estimate_head_pose_model(frame, (x, y, x1, y1), debug=False)
-
-        ## FACE BOUNDING BOX ################################################################
-        # if framecount is not None:
-        #     print(f"FRAME: {framecount+1}")
-
         width = right - left
         height = bot - top
         face_dimensions = (width * frame_width, height * frame_height)
         indexes = (top_ind, bot_ind, left_ind, right_ind)
         #print([face_landmarks[ind] for ind in indexes])
         #print(f"width: {width}, height: {height}")
+
+        # ROI_images = roi.get_ROI_images(frame, face_dimensions, face_landmarks)
+        ROI_images = []
         #####################################################################################
-        ## left
-        top_left = face_landmarks[470].y
-        bot_left = face_landmarks[472].y
-        iris_diameters_left = (bot_left - top_left)
-        iris_prop_left = iris_diameters_left / height
-
-        ## right
-        top_right = face_landmarks[475].y
-        bot_right = face_landmarks[477].y
-        iris_diameters_right = (bot_right - top_right)
-        iris_prop_right = iris_diameters_right / height
-        # print(iris_diameters_left)
-        # print(iris_diameters_right)
-        
-        # print(f"LEFT_EYE_PROP: {iris_prop_left}")
-        # print(f"RIGHT_EYE_PROP: {iris_prop_right}")
-
-        if mean_iris_props is None:
-            iris_diameters = {"left": iris_diameters_left, "right": iris_diameters_right}
-            # print(f"CURR_LEFT_EYE_PROP: {iris_prop_left}")
-            # print(f"CURR_RIGHT_EYE_PROP: {iris_prop_right}")
-        else:
-            iris_diameters = {"left": mean_iris_props["left"]*height, "right": mean_iris_props["right"]*height}
-        
-            # print(f"CURR_LEFT_EYE_PROP: {mean_iris_props['left']}")
-            # print(f"CURR_RIGHT_EYE_PROP: {mean_iris_props['right']}")
-        #####################################################################################
-
-        # right_eye_indexes = { "upper_landmarks": [56, 28, 27, 29, 30], "lower_landmarks": [26, 22, 23, 24, 110], "center_landmarks": [130, 243] }
-        # left_eye_indexes = { "upper_landmarks": [286, 258, 257, 259, 260], "lower_landmarks": [256, 252, 253, 254, 339], "center_landmarks": [359, 463] }
-
-        # right_eye_indexes = { "upper_landmarks": [157, 158, 159, 160, 161], "lower_landmarks": [154, 153, 145, 144, 163], "center_landmarks": [33, 133] }
-        # left_eye_indexes = { "upper_landmarks": [384, 385, 386, 387, 388], "lower_landmarks": [381, 380, 374, 373, 390], "center_landmarks": [263, 362] }
-        right_eye_indexes = { "upper_landmarks": [158, 159, 160], "lower_landmarks": [153, 145, 144], "center_landmarks": [33, 133] }
-        left_eye_indexes = { "upper_landmarks": [385, 386, 387], "lower_landmarks": [380, 374, 373], "center_landmarks": [263, 362] }
-        eye_indexes = { "left": left_eye_indexes, "right": right_eye_indexes }
-
-        # print(f"LEFT_EYE_LANDMARKS")
-        left_sum_z = 0
-        num_left_landmarks = 0
-        for pos, indexes in left_eye_indexes.items():
-            for index in indexes:
-                left_sum_z += face_landmarks[index].z
-                num_left_landmarks += 1
-        
-        right_sum_z = 0
-        num_right_landmarks = 0
-        # print(f"RIGHT_EYE_LANDMARKS")
-        for pos, indexes in right_eye_indexes.items():
-            for index in indexes:
-                right_sum_z += face_landmarks[index].z
-                num_right_landmarks += 1
-        
-        mean_left_z = left_sum_z / num_left_landmarks
-        mean_right_z = right_sum_z / num_right_landmarks
-
-        # print(f"MEAN RIGHT Z: {mean_right_z}")
-        # print(f"MEAN LEFT Z: {mean_left_z}")
-        
-        closer_eye = "right"
-        closer_eye_indexes = right_eye_indexes
-        if mean_left_z < mean_right_z:
-            closer_eye = "left"
-            closer_eye_indexes = left_eye_indexes
-        
-        # print(f"CLOSER EYE: {closer_eye}")
-
-        left_iris_indexes = [ 468, 469, 470, 471, 472 ]
-        right_iris_indexes = [ 473, 474, 475, 476, 477 ]
-        iris_indexes = { "left": left_iris_indexes, "right": right_iris_indexes}
-
-        # upper_lip_indexes = [ 81, 82, 13, 312, 311 ]
-        # lower_lip_indexes = [ 178, 87, 14, 317, 402 ]
-        upper_lip_indexes = [ 82, 13, 312 ]
-        lower_lip_indexes = [ 87, 14, 317 ]
-        center_lip_indexes = [ 78, 308 ]
-        lip_indexes = { "upper_landmarks": upper_lip_indexes, "lower_landmarks": lower_lip_indexes, "center_landmarks": center_lip_indexes}
-        
-        nose_tip_y = face_landmarks[1].y
-        mouth_top_y = (face_landmarks[17].y - face_landmarks[0].y) / height # dividimos entre la altura de la cabeza
-        
-        right_mouth = np.array([face_landmarks[308].x, face_landmarks[308].y])
-        left_mouth = np.array([face_landmarks[78].x, face_landmarks[78].y])
-        mouth_width = (face_landmarks[308].x - face_landmarks[78].x) / width
-        # mouth_width = np.linalg.norm(right_mouth - left_mouth)
-        # cv2.imshow("", res_img)
-        #cv2.waitKey()
-
-        ROI_images = roi.get_ROI_images(frame, face_dimensions, face_landmarks)
-        cv2.imwrite(f"output_eyes/eye{framecount}.jpg", ROI_images[f"{closer_eye}_eye"])
-
-        #print(tensorflow_open_close(["eye.jpg"]))
-
-        #cv2.imwrite("right_eye.jpg", ROI_images["right_eye"])
-
-        #iris_centers = roi.get_iris_centers(frame, face_landmarks, iris_indexes)
-
-        iris_metrics = roi.get_iris_metrics(frame, face_landmarks, iris_indexes)
-        method = config["eye_closure_method"]
-        if method == 1:
-            eye_closure_func = image_analysis.compute_eye_closure1
-        elif method == 2:
-            eye_closure_func = image_analysis.compute_eye_closure2
-        else:
-            eye_closure_func = image_analysis.compute_eye_closure3
 
         nose_tip_y_diff_threshold = config["head_nod_y_min_threshold"]
         mouth_top_y_diff_threshold = config["yawn_y_min_threshold"]
@@ -295,90 +228,227 @@ def process_frame(frame, config, mean_iris_props=None, mean_first_ear=None, mean
 
         main_threshold_perc = config["main_threshold_perc"]
         gray_zone_perc = config["gray_zone_perc"]
-        if mean_first_ear is not None:
-            threshold = mean_first_ear * main_threshold_perc
-        
-        if last_ear_values is not None:
-            threshold = main_threshold_perc * sum(last_ear_values) / len(last_ear_values)
-
-        if mean_first_pitch is not None:
-            head_nod_threshold = mean_first_pitch * head_nod_threshold_perc
-        
-        num_frames_lag_ignore = config["num_frames_lag_ignore"]
-        mean_pitch = pose_angle_dict["pitch"]
-        if last_pitch_values is not None:
-            pitch_last = min(2, len(last_pitch_values))
-            pitch_values_to_analyze = last_pitch_values[-pitch_last:]
-            mean_pitch = (sum(pitch_values_to_analyze) + pose_angle_dict["pitch"]) / (pitch_last + 1)
-        
-        mean_yaw = pose_angle_dict["yaw"]
-        if last_yaw_values is not None:
-            yaw_last = min(2, len(last_yaw_values))
-            yaw_values_to_analyze = last_yaw_values[-yaw_last:]
-            mean_yaw = (sum(yaw_values_to_analyze) + pose_angle_dict["yaw"]) / (yaw_last + 1)
-        
-        mar = image_analysis.compute_mouth_closure(frame, face_landmarks, **lip_indexes)
-        mean_mar = mar
-        if last_mar_values is not None:
-            mar_last = min(2, len(last_mar_values))
-            mar_values_to_analyze = last_mar_values[-mar_last:]
-            mean_mar = (sum(mar_values_to_analyze) + mar) / (mar_last + 1)
-        
-        ear = eye_closure_func(frame, face_landmarks, iris_diameter=iris_diameters[closer_eye], **eye_indexes[closer_eye])
-        mean_ear = ear
-        # if last_ear_values is not None:
-        #     ear_last = min(2, len(last_ear_values))
-        #     ear_values_to_analyze = last_ear_values[-ear_last:]
-        #     mean_ear = (sum(ear_values_to_analyze) + ear) / (ear_last + 1)
-        
-        open_eyes = image_analysis.check_eyes_open(mean_ear, threshold, gray_zone_perc, previous_eye_state)
-
-        possible_head_nod = not open_eyes
-        if not open_eyes and nose_tip_y_values is not None:
-            mean_nose_tip_y = sum(nose_tip_y_values) / len(nose_tip_y_values)
-            nose_tip_y_threshold = mean_nose_tip_y + nose_tip_y_diff_threshold
-            possible_head_nod = nose_tip_y >= nose_tip_y_threshold
-        
-        if mouth_top_y_values is not None:
-            mean_mouth_top_y = sum(mouth_top_y_values) / len(mouth_top_y_values)
-            mouth_top_y_threshold = mean_mouth_top_y + mouth_top_y_diff_threshold
-            # possible_yawn = mouth_top_y >= mouth_top_y_threshold
-
-        # if last_pitch_values is not None and framecount > num_frames_lag_ignore:
-        #     pitch_values_to_analyze = last_pitch_values[:-num_frames_lag_ignore]
-        #     head_nod_threshold = head_nod_threshold_perc * sum(pitch_values_to_analyze) / len(pitch_values_to_analyze)
-
-
-        
-        head_nod = possible_head_nod
-        if possible_head_nod:
-            head_nod = image_analysis.check_head_nod(mean_pitch, head_nod_threshold)
-        
-        yawn = image_analysis.check_yawn(mean_mar, yawn_threshold)
-
         frame_metrics = {}
+
+        if eyes:
+            ## left
+            top_left = face_landmarks[470].y
+            bot_left = face_landmarks[472].y
+            iris_diameters_left = (bot_left - top_left)
+            iris_prop_left = iris_diameters_left / height
+
+            ## right
+            top_right = face_landmarks[475].y
+            bot_right = face_landmarks[477].y
+            iris_diameters_right = (bot_right - top_right)
+            iris_prop_right = iris_diameters_right / height
+
+            if mean_iris_props is None:
+                iris_diameters = {"left": iris_diameters_left, "right": iris_diameters_right}
+                # print(f"CURR_LEFT_EYE_PROP: {iris_prop_left}")
+                # print(f"CURR_RIGHT_EYE_PROP: {iris_prop_right}")
+            else:
+                iris_diameters = {"left": mean_iris_props["left"]*height, "right": mean_iris_props["right"]*height}
+        
+            # right_eye_indexes = { "upper_landmarks": [56, 28, 27, 29, 30], "lower_landmarks": [26, 22, 23, 24, 110], "center_landmarks": [130, 243] }
+            # left_eye_indexes = { "upper_landmarks": [286, 258, 257, 259, 260], "lower_landmarks": [256, 252, 253, 254, 339], "center_landmarks": [359, 463] }
+
+            # right_eye_indexes = { "upper_landmarks": [157, 158, 159, 160, 161], "lower_landmarks": [154, 153, 145, 144, 163], "center_landmarks": [33, 133] }
+            # left_eye_indexes = { "upper_landmarks": [384, 385, 386, 387, 388], "lower_landmarks": [381, 380, 374, 373, 390], "center_landmarks": [263, 362] }
+            right_eye_indexes = { "upper_landmarks": [158, 159, 160], "lower_landmarks": [153, 145, 144], "center_landmarks": [33, 133] }
+            left_eye_indexes = { "upper_landmarks": [385, 386, 387], "lower_landmarks": [380, 374, 373], "center_landmarks": [263, 362] }
+            eye_indexes = { "left": left_eye_indexes, "right": right_eye_indexes }
+
+            # print(f"LEFT_EYE_LANDMARKS")
+            left_sum_z = 0
+            num_left_landmarks = 0
+            for pos, indexes in left_eye_indexes.items():
+                for index in indexes:
+                    left_sum_z += face_landmarks[index].z
+                    num_left_landmarks += 1
+            
+            right_sum_z = 0
+            num_right_landmarks = 0
+            # print(f"RIGHT_EYE_LANDMARKS")
+            for pos, indexes in right_eye_indexes.items():
+                for index in indexes:
+                    right_sum_z += face_landmarks[index].z
+                    num_right_landmarks += 1
+            
+            mean_left_z = left_sum_z / num_left_landmarks
+            mean_right_z = right_sum_z / num_right_landmarks
+
+            # print(f"MEAN RIGHT Z: {mean_right_z}")
+            # print(f"MEAN LEFT Z: {mean_left_z}")
+            
+            closer_eye = "right"
+            closer_eye_indexes = right_eye_indexes
+            if mean_left_z < mean_right_z:
+                closer_eye = "left"
+                closer_eye_indexes = left_eye_indexes
+            
+            # print(f"CLOSER EYE: {closer_eye}")
+
+            left_iris_indexes = [ 468, 469, 470, 471, 472 ]
+            right_iris_indexes = [ 473, 474, 475, 476, 477 ]
+            iris_indexes = { "left": left_iris_indexes, "right": right_iris_indexes}
+
+            # iris_centers = roi.get_iris_centers(frame, face_landmarks, iris_indexes)
+            # iris_metrics = roi.get_iris_metrics(frame, face_landmarks, iris_indexes)
+            method = config["eye_closure_method"]
+            if method == 1:
+                eye_closure_func = image_analysis.compute_eye_closure1
+            elif method == 2:
+                eye_closure_func = image_analysis.compute_eye_closure2
+            else:
+                eye_closure_func = image_analysis.compute_eye_closure3
+
+            if mean_first_ear is not None:
+                threshold = mean_first_ear * main_threshold_perc
+        
+            if last_ear_values is not None:
+                threshold = main_threshold_perc * sum(last_ear_values) / len(last_ear_values)
+
+            ear = eye_closure_func(frame, face_landmarks, iris_diameter=iris_diameters[closer_eye], **eye_indexes[closer_eye])
+            ear1 = image_analysis.compute_eye_closure1(frame, face_landmarks, iris_diameter=iris_diameters[closer_eye], **eye_indexes[closer_eye])
+            ear2 = image_analysis.compute_eye_closure2(frame, face_landmarks, iris_diameter=iris_diameters[closer_eye], **eye_indexes[closer_eye])
+            ear3 = image_analysis.compute_eye_closure3(frame, face_landmarks, iris_diameter=iris_diameters[closer_eye], **eye_indexes[closer_eye]) 
+            mean_ear = ear
+            # if last_ear_values is not None:
+            #     ear_last = min(2, len(last_ear_values))
+            #     ear_values_to_analyze = last_ear_values[-ear_last:]
+            #     mean_ear = (sum(ear_values_to_analyze) + ear) / (ear_last + 1)
+        
+            open_eyes = image_analysis.check_eyes_open(mean_ear, threshold, gray_zone_perc, previous_eye_state)
+            drawn_frame = draw_eye_landmarks(drawn_frame, face_landmarks, {"eye": closer_eye_indexes})
+        else:
+            ear = 0
+            ear1 = 0
+            ear2 = 0
+            ear3 = 0
+            mean_ear = 0
+            open_eyes = None
+            iris_prop_left = 0
+            iris_prop_right = 0
+
+        if mouth:
+            # upper_lip_indexes = [ 81, 82, 13, 312, 311 ]
+            # lower_lip_indexes = [ 178, 87, 14, 317, 402 ]
+            upper_lip_indexes = [ 82, 13, 312 ]
+            lower_lip_indexes = [ 87, 14, 317 ]
+            center_lip_indexes = [ 78, 308 ]
+            lip_indexes = { "upper_landmarks": upper_lip_indexes, "lower_landmarks": lower_lip_indexes, "center_landmarks": center_lip_indexes}
+        
+            mouth_top_y = (face_landmarks[17].y - face_landmarks[0].y) / height # dividimos entre la altura de la cabeza
+            
+            right_mouth = np.array([face_landmarks[308].x, face_landmarks[308].y])
+            left_mouth = np.array([face_landmarks[78].x, face_landmarks[78].y])
+            mouth_width = (face_landmarks[308].x - face_landmarks[78].x) / width
+            # mouth_width = np.linalg.norm(right_mouth - left_mouth)
+
+            method = config["mouth_closure_method"]
+            if method == 1:
+                mouth_closure_func = image_analysis.compute_mouth_closure1
+            elif method == 2:
+                mouth_closure_func = image_analysis.compute_mouth_closure2
+
+            mar = mouth_closure_func(frame, face_landmarks, **lip_indexes)
+            mar1 = image_analysis.compute_mouth_closure1(frame, face_landmarks, **lip_indexes)
+            mar2 = image_analysis.compute_mouth_closure2(frame, face_landmarks, **lip_indexes)
+            mean_mar = mar
+            if last_mar_values is not None:
+                mar_last = min(30, len(last_mar_values))
+                mar_values_to_analyze = last_mar_values[-mar_last:]
+                mean_mar = (sum(mar_values_to_analyze) + mar) / (mar_last + 1)
+            
+            if mouth_top_y_values is not None:
+                mean_mouth_top_y = sum(mouth_top_y_values) / len(mouth_top_y_values)
+                mouth_top_y_threshold = mean_mouth_top_y + mouth_top_y_diff_threshold
+                # possible_yawn = mouth_top_y >= mouth_top_y_threshold
+            
+            yawn = image_analysis.check_yawn(mean_mar, yawn_threshold)
+            drawn_frame = draw_lip_landmarks(drawn_frame, face_landmarks, lip_indexes)
+        else:
+            mar = 0
+            mar1 = 0
+            mar2 = 0
+            mean_mar = 0
+            yawn = None
+            mouth_top_y = 0
+            mouth_width = 0
+        
+        if head:
+            pose_angle_dict = last_pose_angles
+            if last_pose_angles is None:
+                pose_angle_dict, drawn_frame = roi.estimate_head_pose_model(frame, drawn_frame, (x, y, x1, y1), debug=False)
+            
+            pose_angle_dict2, _ = roi.estimate_head_pose(frame, drawn_frame, face_landmarks)
+
+            if mean_first_pitch is not None:
+                head_nod_threshold = mean_first_pitch * head_nod_threshold_perc
+
+            mean_pitch = pose_angle_dict["pitch"]
+            if last_pitch_values is not None:
+                pitch_last = min(2, len(last_pitch_values))
+                pitch_values_to_analyze = last_pitch_values[-pitch_last:]
+                mean_pitch = (sum(pitch_values_to_analyze) + pose_angle_dict["pitch"]) / (pitch_last + 1)
+
+            mean_yaw = pose_angle_dict["yaw"]
+            if last_yaw_values is not None:
+                yaw_last = min(2, len(last_yaw_values))
+                yaw_values_to_analyze = last_yaw_values[-yaw_last:]
+                mean_yaw = (sum(yaw_values_to_analyze) + pose_angle_dict["yaw"]) / (yaw_last + 1)
+
+            nose_tip_y = face_landmarks[1].y
+            possible_head_nod = not open_eyes
+            if not open_eyes and nose_tip_y_values is not None:
+                mean_nose_tip_y = sum(nose_tip_y_values) / len(nose_tip_y_values)
+                nose_tip_y_threshold = mean_nose_tip_y + nose_tip_y_diff_threshold
+                possible_head_nod = nose_tip_y >= nose_tip_y_threshold
+            
+            # if last_pitch_values is not None and framecount > num_frames_lag_ignore:
+            #     pitch_values_to_analyze = last_pitch_values[:-num_frames_lag_ignore]
+            #     head_nod_threshold = head_nod_threshold_perc * sum(pitch_values_to_analyze) / len(pitch_values_to_analyze)
+            head_nod = possible_head_nod
+            if possible_head_nod:
+                head_nod = image_analysis.check_head_nod(mean_pitch, head_nod_threshold)
+        else:
+            pose_angle_dict = {"pitch": 0, "yaw": 0, "roll": 0}
+            mean_yaw = 0
+            mean_pitch = 0
+            nose_tip_y = 0
+            head_nod = None
+
+        frame_metrics["roll"] = pose_angle_dict["roll"]
+        frame_metrics["yaw"] = pose_angle_dict["yaw"]
+        frame_metrics["yaw1"] = pose_angle_dict["yaw"]
+        frame_metrics["yaw2"] = pose_angle_dict2["yaw"]
+        frame_metrics["pitch"] = pose_angle_dict["pitch"]
+        frame_metrics["pitch1"] = pose_angle_dict["pitch"]
+        frame_metrics["pitch2"] = pose_angle_dict2["pitch"]
         frame_metrics["mean_yaw_3_frames"] = mean_yaw
         frame_metrics["mean_pitch_3_frames"] = mean_pitch
-        frame_metrics["mean_ear_3_frames"] = mean_ear
-        frame_metrics["mean_mar_3_frames"] = mean_mar
-        # frame_metrics["lear"] = eye_closure_func(frame, face_landmarks, iris_diameter=iris_diameters["left"], **eye_indexes["left"])
-        # frame_metrics["rear"] = eye_closure_func(frame, face_landmarks, iris_diameter=iris_diameters["right"], **eye_indexes["right"])
+        frame_metrics["nose_tip_y"] = nose_tip_y
+        frame_metrics["head_nod"] = head_nod
+
         frame_metrics["ear"] = ear
+        frame_metrics["ear1"] = ear1
+        frame_metrics["ear2"] = ear2
+        frame_metrics["ear3"] = ear3
+        frame_metrics["mean_ear_3_frames"] = mean_ear
         frame_metrics["open_eyes"] = open_eyes
-        frame_metrics["yawn"] = yawn
-        frame_metrics["mar"] = mar
         frame_metrics["left_iris_diameter"] = iris_prop_left
         frame_metrics["right_iris_diameter"] = iris_prop_right
-        frame_metrics["yaw"] = pose_angle_dict["yaw"]
-        frame_metrics["pitch"] = pose_angle_dict["pitch"]
-        frame_metrics["head_nod"] = head_nod
-        frame_metrics["nose_tip_y"] = nose_tip_y
+        
+        frame_metrics["mar"] = mar
+        frame_metrics["mar1"] = mar1
+        frame_metrics["mar2"] = mar2
+        frame_metrics["mean_mar_3_frames"] = mean_mar
+        frame_metrics["yawn"] = yawn
         frame_metrics["mouth_top_y"] = mouth_top_y
         frame_metrics["mouth_width"] = mouth_width
 
         #indexes = [27, 28, 29, 22, 23, 24, 257, 258, 259, 252, 253, 254]
-        drawn_frame = draw_lip_landmarks(drawn_frame, face_landmarks, lip_indexes)
-        drawn_frame = draw_eye_landmarks(drawn_frame, face_landmarks, {"eye": closer_eye_indexes})
         # drawn_frame = draw_iris_landmarks(drawn_frame, face_landmarks, iris_indexes)
         #drawn_frame = cv2.rectangle(drawn_frame, (int(top*frame_height), int(left*frame_width)), (int(bot*frame_height), int(right*frame_width)), (0, 255, 0), 2)
         # cv2.imshow("f", drawn_frame)
@@ -392,6 +462,11 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict, config: d
     num_frames_new_head_nod = config["num_frames_new_head_nod"]
     num_frames_new_yawn = config["num_frames_new_yawn"]
 
+    blink_value = 0
+    head_nod_value = 0
+    yawn_value = 0
+    eye_state_value = 0
+
     periodical_data["frame_count"] += 1
     if frame_metrics is None:
         return periodical_data
@@ -401,9 +476,10 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict, config: d
         periodical_data["head_nod_total_frame_count"] += 1
 
         # si detectamos un head nod y en el frame anterior no lo hicimos
-        if (not periodical_data["previous_head_nod_state"] and 
+        if (not periodical_data["previous_head_nod_state"] and
             periodical_data["frame_count"] - periodical_data["head_nod_last_frame"] > num_frames_new_head_nod):
             periodical_data["head_nod_count"] += 1
+            head_nod_value = 1
     else:
         if periodical_data["previous_head_nod_state"]:
             periodical_data["head_nod_last_frame"] = periodical_data["frame_count"] - 1
@@ -413,9 +489,10 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict, config: d
     if frame_metrics["yawn"]:
         periodical_data["yawn_total_frame_count"] += 1
 
-        if (not periodical_data["previous_yawn_state"] and
-            periodical_data["frame_count"] - periodical_data["yawn_last_frame"] > num_frames_new_yawn):
+        if (not periodical_data["previous_yawn_state"]):
+            # periodical_data["frame_count"] - periodical_data["yawn_last_frame"] > num_frames_new_yawn):
             periodical_data["num_yawns"] += 1
+            yawn_value = 1
     else:
         if periodical_data["previous_yawn_state"]:
             periodical_data["yawn_last_frame"] = periodical_data["frame_count"] - 1
@@ -429,6 +506,7 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict, config: d
         
         if periodical_data["current_frames_closed_eyes"] > 0:
             periodical_data["num_blinks"] += 1
+            blink_value = 1
         # #### check for "open closed open" case
         # if periodical_data["previous_frame_eye_state"] == "closed" and periodical_data["previous2_frame_eye_state"] == "open":
         #     periodical_data["previous_frame_eye_state"] = "open"
@@ -439,6 +517,7 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict, config: d
         periodical_data["current_frames_closed_eyes"] = 0
     else:
         periodical_data["current_eye_state"] = "closed"
+        eye_state_value = 1
 
         # #### check for "closed open closed" case
         # if periodical_data["previous_frame_eye_state"] == "open" and periodical_data["previous2_frame_eye_state"] == "closed":
@@ -458,13 +537,32 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict, config: d
     #periodical_data["ear_values"].append(frame_metrics["ear"])
     periodical_data["sum_ear"] += frame_metrics["ear"]
 
+
+    periodical_data_max_values = config["periodical_data_max_values"]
+    if len(periodical_data["blink_values"]) >= periodical_data_max_values:
+        periodical_data["blink_values"].pop(0)
+    periodical_data["blink_values"].append(blink_value)
+    
+    if len(periodical_data["yawn_values"]) >= periodical_data_max_values:
+        periodical_data["yawn_values"].pop(0)
+    periodical_data["yawn_values"].append(yawn_value)
+    
+    if len(periodical_data["head_nod_values"]) >= periodical_data_max_values:
+        periodical_data["head_nod_values"].pop(0)
+    periodical_data["head_nod_values"].append(head_nod_value)
+    
+    if len(periodical_data["closed_eye_frame_values"]) >= periodical_data_max_values:
+        periodical_data["closed_eye_frame_values"].pop(0)
+    periodical_data["closed_eye_frame_values"].append(eye_state_value)
+
+
     if len(periodical_data["nose_tip_y_values"]) >= config["num_frames_nose_tip_y"]:
         periodical_data["nose_tip_y_values"].pop(0)
     periodical_data["nose_tip_y_values"].append(frame_metrics["nose_tip_y"])
 
-    if len(periodical_data["mouth_top_y_values"]) >= config["num_frames_mouth_top_y"]:
-        periodical_data["mouth_top_y_values"].pop(0)
-    periodical_data["mouth_top_y_values"].append(frame_metrics["mouth_top_y"])
+    # if len(periodical_data["mouth_top_y_values"]) >= config["num_frames_mouth_top_y"]:
+    #     periodical_data["mouth_top_y_values"].pop(0)
+    # periodical_data["mouth_top_y_values"].append(frame_metrics["mouth_top_y"])
 
 
     if len(periodical_data["ear_values"]) >= config["num_frames_dynamic_avg"]:
@@ -482,15 +580,17 @@ def update_periodical_data(frame_metrics: dict, periodical_data: dict, config: d
     if len(periodical_data["yaw_values"]) >= config["num_frames_dynamic_avg"]:
         periodical_data["yaw_values"].pop(0)
     periodical_data["yaw_values"].append(frame_metrics["yaw"])
-
+    
+    # if (periodical_data["frame_count"] - 1) % config["pose_angles_detection_frequency"] == 0:
+    #     periodical_data["pose_angle_dict"] = {"yaw": frame_metrics["yaw"], "pitch": frame_metrics["pitch"], "roll": frame_metrics["roll"]} 
 
     if periodical_data["frame_count"] <= 20:
-        periodical_data["sum_first_mouth_width"] += frame_metrics["mouth_width"]
+        # periodical_data["sum_first_mouth_width"] += frame_metrics["mouth_width"]
         periodical_data["mean_first_mouth_width"] = periodical_data["sum_first_mouth_width"] / min(20, periodical_data["frame_count"]) 
-        periodical_data["sum_left_iris_diameter"] += frame_metrics["left_iris_diameter"]
-        periodical_data["sum_right_iris_diameter"] += frame_metrics["right_iris_diameter"]
-        periodical_data["mean_left_iris_diameter"] = periodical_data["sum_left_iris_diameter"] / min(10, periodical_data["frame_count"])
-        periodical_data["mean_right_iris_diameter"] = periodical_data["sum_right_iris_diameter"] / min(10, periodical_data["frame_count"])
+        # periodical_data["sum_left_iris_diameter"] += frame_metrics["left_iris_diameter"]
+        # periodical_data["sum_right_iris_diameter"] += frame_metrics["right_iris_diameter"]
+        # periodical_data["mean_left_iris_diameter"] = periodical_data["sum_left_iris_diameter"] / min(10, periodical_data["frame_count"])
+        # periodical_data["mean_right_iris_diameter"] = periodical_data["sum_right_iris_diameter"] / min(10, periodical_data["frame_count"])
         periodical_data["sum_first_ear"] += frame_metrics["ear"]
         periodical_data["mean_first_ear"] = periodical_data["sum_first_ear"] / min(20, periodical_data["frame_count"])
         periodical_data["sum_first_pitch"] += frame_metrics["pitch"]
@@ -505,17 +605,33 @@ def compute_global_metrics(frame_metrics: dict, periodical_data: dict, fps: int,
     global_metrics["mean_ear"] = periodical_data["sum_ear"] / periodical_data["frame_count"]
     global_metrics["blink_frequency"] = periodical_data["num_blinks"] / periodical_data["frame_count"]
     global_metrics["blinks_per_minute"] = periodical_data["num_blinks"] * frames_per_minute / periodical_data["frame_count"]
-    global_metrics["perclos"] = periodical_data["closed_eye_frame_count"] / periodical_data["frame_count"]
+    # global_metrics["perclos"] = periodical_data["closed_eye_frame_count"] / periodical_data["frame_count"]
     global_metrics["current_time_closed_eyes"] = periodical_data["current_frames_closed_eyes"] / fps
-    global_metrics["yawns_per_minute"] = periodical_data["num_yawns"] * frames_per_minute / periodical_data["frame_count"]
-    global_metrics["head_nods_per_minute"] = periodical_data["head_nod_count"] * frames_per_minute / periodical_data["frame_count"]
+    # global_metrics["yawns_per_minute"] = periodical_data["num_yawns"] * frames_per_minute / periodical_data["frame_count"]
+    # global_metrics["head_nods_per_minute"] = periodical_data["head_nod_count"] * frames_per_minute / periodical_data["frame_count"]
     global_metrics["mean_nose_tip_y"] = sum(periodical_data["nose_tip_y_values"]) / len(periodical_data["nose_tip_y_values"])
-    global_metrics["mean_mouth_top_y"] = sum(periodical_data["mouth_top_y_values"]) / len(periodical_data["mouth_top_y_values"])
+    # global_metrics["mean_mouth_top_y"] = sum(periodical_data["mouth_top_y_values"]) / len(periodical_data["mouth_top_y_values"])
 
-    if periodical_data["num_blinks"] == 0:
+    # if periodical_data["num_blinks"] == 0:
+    #     global_metrics["mean_blink_time"] = 0
+    # else:
+    #     global_metrics["mean_blink_time"] = (periodical_data["closed_eye_frame_count"] / periodical_data["num_blinks"]) / fps
+
+    ###########################
+    # METODO VENTANA ULTIMO MIN
+
+    values_length = len(periodical_data["closed_eye_frame_values"])
+    ratio = frames_per_minute / min(periodical_data["frame_count"], values_length)
+
+    global_metrics["perclos"] = sum(periodical_data["closed_eye_frame_values"])/values_length
+    global_metrics["yawns_per_minute"] = sum(periodical_data["yawn_values"]) * ratio
+    global_metrics["head_nods_per_minute"] = sum(periodical_data["head_nod_values"]) * ratio
+    
+    num_blinks = sum(periodical_data["blink_values"])
+    if num_blinks == 0:
         global_metrics["mean_blink_time"] = 0
     else:
-        global_metrics["mean_blink_time"] = (periodical_data["closed_eye_frame_count"] / periodical_data["num_blinks"]) / fps
+        global_metrics["mean_blink_time"] = (sum(periodical_data["closed_eye_frame_values"]) / num_blinks) / fps
 
     return global_metrics
 
@@ -526,6 +642,10 @@ def obtain_frame_metrics(frame, periodical_data, config, obtain_global_metrics=F
     iris_diameters = None
     mean_first_ear = None
     mean_first_pitch = None
+    
+    detect_eyes = config["detect_eyes"]
+    detect_mouth = config["detect_mouth"]
+    detect_head = config["detect_head"]
 
     if "mean_left_iris_diameter" in periodical_data:
         iris_diameters = {"left": periodical_data["mean_left_iris_diameter"], "right": periodical_data["mean_right_iris_diameter"]}
@@ -536,6 +656,9 @@ def obtain_frame_metrics(frame, periodical_data, config, obtain_global_metrics=F
     if "mean_first_pitch" in periodical_data:
         mean_first_pitch = periodical_data["mean_first_pitch"]
 
+    last_pose_angles = None
+    # TODO if periodical_data["frame_count"] % config["pose_angles_detection_frequency"] != 0:
+    #     last_pose_angles = periodical_data["pose_angle_dict"]
 
     ear_values = None
     if periodical_data["ear_values"] != []:
@@ -569,7 +692,7 @@ def obtain_frame_metrics(frame, periodical_data, config, obtain_global_metrics=F
     if periodical_data["previous_frame_eye_state"] is not None:
         previous_frame_eye_state = dict[periodical_data["previous_frame_eye_state"]]
 
-    frame_metrics, drawn_frame, _ = process_frame(frame, config, iris_diameters, framecount=periodical_data["frame_count"], mean_first_ear=mean_first_ear, mean_first_pitch=mean_first_pitch, last_pitch_values=pitch_values, last_yaw_values=yaw_values, last_mar_values=mar_values, last_ear_values=ear_values, nose_tip_y_values=nose_tip_y_values, mouth_top_y_values=mouth_top_y_values, previous_eye_state=previous_frame_eye_state)
+    frame_metrics, drawn_frame, _ = process_frame(frame, config, eyes=detect_eyes, mouth=detect_mouth, head=detect_head, last_pose_angles=last_pose_angles, mean_iris_props=iris_diameters, framecount=periodical_data["frame_count"], mean_first_ear=mean_first_ear, mean_first_pitch=mean_first_pitch, last_pitch_values=pitch_values, last_yaw_values=yaw_values, last_mar_values=mar_values, last_ear_values=ear_values, nose_tip_y_values=nose_tip_y_values, mouth_top_y_values=mouth_top_y_values, previous_eye_state=previous_frame_eye_state)
     metrics["frame_metrics"] = frame_metrics
     # TODO: periodical data que tenga en cuenta info de los ultimos x minutos
     periodical_data = update_periodical_data(frame_metrics, periodical_data, config)
@@ -584,46 +707,159 @@ def obtain_frame_metrics(frame, periodical_data, config, obtain_global_metrics=F
 
     return metrics
 
+
+
+def obtencion_metricas_locales_frame(row, index_dict, periodical_data, config):
+    ###### EYE INFO ########
+    eye_method = config["eye_closure_method"]
+    eye_threshold = config["eye_closure_threshold"]
+    eye_threshold_perc = config["main_threshold_perc"]
+    eye_gray_zone_perc = config["gray_zone_perc"]
+
+    mean_first_ear = periodical_data["mean_first_ear"]
+    last_ear_values = periodical_data["ear_values"]
+    eye_state_dict = {"open": True, "closed": False, None: None}
+    previous_eye_state = eye_state_dict[periodical_data["previous_frame_eye_state"]]
+    ########################
+    ###### MOUTH INFO ######
+    mouth_method = config["mouth_closure_method"]
+    yawn_threshold = config["mouth_yawn_threshold"]
+    yawn_gray_zone = config["gray_zone_mouth"]
+
+    last_mar_values = periodical_data["mar_values"]
+    previous_mouth_state = periodical_data["previous_frame_mouth_state"]
+    ########################
+    ###### HEAD INFO #######
+    head_method = config["pitch_method"]
+    head_nod_threshold = config["head_nod_threshold"]
+    head_nod_threshold_perc = config["head_nod_threshold_perc"]
+    nose_tip_y_diff_threshold = config["head_nod_y_min_threshold"]
+
+    mean_first_pitch = periodical_data["mean_first_pitch"]
+    last_pitch_values = periodical_data["pitch_values"]
+    nose_tip_y_values = periodical_data["nose_tip_y_values"]
+    ########################
+
+    frame_metrics = {}
+
+    if mean_first_ear is not None:
+        eye_threshold = mean_first_ear * eye_threshold_perc
+
+    if last_ear_values != []:
+        eye_threshold = eye_threshold_perc * sum(last_ear_values) / len(last_ear_values)
+
+    ear = row[index_dict[f"ear{eye_method}"]]
+    mean_ear = ear
+
+    eye_state = image_analysis.check_eyes_open(mean_ear, eye_threshold, eye_gray_zone_perc, previous_eye_state)
+    frame_metrics["open_eyes"] = eye_state
+    frame_metrics["ear"] = ear
+
+    mar = row[index_dict[f"mar{mouth_method}"]]
+    mean_mar = mar
+    if last_mar_values != []:
+        mar_last = min(30, len(last_mar_values))
+        mar_values_to_analyze = last_mar_values[-mar_last:]
+        mean_mar = (sum(mar_values_to_analyze) + mar) / (mar_last + 1)
+    
+    yawn = image_analysis.check_yawn(mean_mar, yawn_threshold, yawn_gray_zone, previous_mouth_state) 
+    frame_metrics["yawn"] = yawn
+    frame_metrics["mar"] = mar
+
+    if mean_first_pitch is not None:
+        head_nod_threshold = mean_first_pitch * head_nod_threshold_perc
+
+    pitch = row[index_dict[f"pitch{head_method}"]]
+    mean_pitch = pitch
+    if last_pitch_values != []:
+        pitch_last = min(2, len(last_pitch_values))
+        pitch_values_to_analyze = last_pitch_values[-pitch_last:]
+        mean_pitch = (sum(pitch_values_to_analyze) + pitch) / (pitch_last + 1)
+
+    nose_tip_y = row[index_dict["nose_tip_y"]]
+    possible_head_nod = not eye_state
+    if not eye_state and nose_tip_y_values != []:
+        mean_nose_tip_y = sum(nose_tip_y_values) / len(nose_tip_y_values)
+        nose_tip_y_threshold = mean_nose_tip_y + nose_tip_y_diff_threshold
+        possible_head_nod = nose_tip_y >= nose_tip_y_threshold
+
+    head_nod = False
+    if possible_head_nod:
+        head_nod = image_analysis.check_head_nod(mean_pitch, head_nod_threshold)
+    frame_metrics["head_nod"] = head_nod
+    frame_metrics["pitch"] = pitch
+    frame_metrics["nose_tip_y"] = nose_tip_y
+
+    yaw = row[index_dict[f"yaw"]]
+    # mean_yaw = yaw
+    # if last_yaw_values != []:
+    #     yaw_last = min(2, len(last_yaw_values))
+    #     yaw_values_to_analyze = last_yaw_values[-yaw_last:]
+    #     mean_yaw = (sum(yaw_values_to_analyze) + yaw) / (yaw_last + 1)
+    frame_metrics["yaw"] = yaw
+    return frame_metrics
+
+
+def obtain_metrics_from_df(df, config):
+    '''
+        Este metodo tiene como objetivo simular la obtencion de metricas que se realiza sobre los videos,
+        pero utilizando dataframes como target.
+
+        Estructura:
+        por cada fila:
+            computar metricas del frame (open eyes, yawn, headnod)
+            computar metricas temporales (periodical_data, global_metrics)
+        
+        Salida:
+            Un nuevo csv, que contenga las metricas temporales
+    '''
+    index_dict = { name: i for i, name in enumerate(list(df), start=0) }
+    print(index_dict)
+
+    periodical_data = copy.deepcopy(periodical_data_initial_state)
+    metrics_list = []
+    labels = ["drowsiness", "mouth", "head", "eye"]
+    available_labels = [ label for label in labels if label in index_dict ]
+    metrics_of_interest = config["metrics_to_obtain"] + labels
+    ind = 0
+    for row in df.itertuples(name=None, index=False):
+        fps = row[index_dict["fps"]]
+    
+        if math.isnan(row[index_dict["frame_count"]]):
+            # si no hemos podido detectar la cara, skipeamos el frame
+            # print(f"Skipping frame {ind}...")
+            periodical_data["frame_count"] += 1
+            flat_metrics = [ (label, row[index_dict[label]]) for label in available_labels ]
+            selected_metrics = { metric:value for metric, value in flat_metrics if metric in metrics_of_interest }
+            metrics_list.append(selected_metrics)
+            ind += 1
+            continue
+
+        frame_metrics = obtencion_metricas_locales_frame(row, index_dict, periodical_data, config)
+        periodical_data = update_periodical_data(frame_metrics, periodical_data, config)
+        global_metrics = compute_global_metrics(frame_metrics, periodical_data, int(fps), int(fps * 60))
+        
+        flat_metrics = dict(list(global_metrics.items())  
+                          + list(periodical_data.items())
+                          + list(frame_metrics.items())
+                          + [ (label, row[index_dict[label]]) for label in available_labels ])
+        selected_metrics = { metric:value for metric, value in flat_metrics.items() if metric in metrics_of_interest }
+        metrics_list.append(selected_metrics)
+        ind += 1
+    
+    resulting_df = pd.DataFrame(metrics_list)
+    return resulting_df
+
+
 def obtain_metrics_from_video(input_video, subject, config):
-    periodical_data = { 
-                    "frame_count" : 0,
-                    "closed_eye_frame_count" : 0,
-                    "current_frames_closed_eyes" : 0,
-                    "previous_current_frames_closed_eyes": 0,
-                    "max_frames_closed_eyes" : 0,
-                    "mean_frames_closed_eyes" : 0,
-                    "num_blinks" : 0,
-                    "previous_frame_eye_state" : None,
-                    "previous2_frame_eye_state" : None,
-                    "ear_values" : [], 
-                    "sum_ear": 0,
-                    "sum_first_ear": 0,
-                    "sum_left_iris_diameter": 0,
-                    "sum_right_iris_diameter": 0,
-                    "current_eye_state": None,
-                    "head_nod_total_frame_count": 0,
-                    "previous_head_nod_state": False,
-                    "head_nod_last_frame": -1000,
-                    "head_nod_count": 0,
-                    "sum_first_pitch": 0,
-                    "pitch_values": [],
-                    "yaw_values": [],
-                    "yawn_total_frame_count": 0,
-                    "previous_yawn_state": False,
-                    "yawn_last_frame": -1000,
-                    "num_yawns" : 0,
-                    "mar_values": [],
-                    "nose_tip_y_values": [],
-                    "mouth_top_y_values": [],
-                    "sum_first_mouth_width": 0,
-                    }
+    periodical_data = copy.deepcopy(periodical_data_initial_state)
 
     metrics = []
     remaining_frames_of_period = config["period_length"]
     fps = round(input_video.get(cv2.CAP_PROP_FPS))
     start = time.time()
     valid_frame, frame = input_video.read()
-    while valid_frame:
+    while valid_frame: # and periodical_data["frame_count"] < 1000:
         remaining_frames_of_period -= 1
         obtain_global_metrics = False
         if remaining_frames_of_period <= 0:
@@ -669,28 +905,110 @@ def create_dataset_from_video(input_video, subject, config, labels):
 
 
 def create_dataset_from_videos_NTHU(videos_and_labels: dict, target_folder: str, config: dict) -> list:
+    df_dataset_dict = {}
+    for dataset, dataset_dict in videos_and_labels.items():
+        dataset_target_folder = os.path.join(target_folder, dataset)
+        df_list = []
+        subjects_to_analyze = config["subjects"][dataset]
+        scenarios_to_analyze = config["scenarios"]
+        states_to_analyze = config["states"]
+
+        subjects = { subject:data for subject, data in dataset_dict.items() if subject in subjects_to_analyze }
+        for subject, scenarios in subjects.items():
+            scenarios = { scenario:data for scenario, data in scenarios.items() if scenario in scenarios_to_analyze }
+            for scenario, driver_states in scenarios.items():
+                driver_states = { state:data for state, data in driver_states.items() if state in states_to_analyze and data != {} }
+                for driver_state, vid_lab in driver_states.items():
+                    print(vid_lab)
+                    labels = vid_lab["labels"]
+                    video = vid_lab["video"]
+                    print(f"{subject}_{scenario}_{driver_state}")
+                    video_df = create_dataset_from_video(video, subject, config, labels)
+                    target_path = os.path.join(dataset_target_folder, f"{subject}_{scenario}_{driver_state}.csv")
+                    video_df.to_csv(target_path)
+                    df_list.append(video_df)
+        
+        df_dataset_dict[dataset] = df_list
+
+    return df_dataset_dict
+
+def load_source_dfs_NTHU(source_folder):
+    source_dfs = { "train": {}, "test": {} }
+
+    for dataset in ["train", "test"]:
+        folder = os.path.join(source_folder, dataset)
+        for filename in os.listdir(folder):
+            file = os.path.join(folder, filename)
+            if filename[-4:] == ".csv" and "big_df" not in filename:
+                df = pd.read_csv(file) 
+                df = df.drop("Unnamed: 0", axis=1)
+                source_dfs[dataset][filename] = df 
+    
+    return source_dfs
+
+def create_dataset_from_df_NTHU(source_folder: str, target_folder: str, config: dict) -> list:
+    source_dfs = load_source_dfs_NTHU(source_folder)
+    
+    df_dataset_dict = {}
+    big_df_list = []
+    for dataset, dataframe_dict in source_dfs.items():
+        dataset_target_folder = os.path.join(target_folder, dataset)
+        df_list = []
+
+        for name, df in dataframe_dict.items():
+            print(name)
+            temporal_metrics_df = obtain_metrics_from_df(df, config)
+            temporal_metrics_df["dataset"] = dataset
+            target_path = os.path.join(dataset_target_folder, name)
+            temporal_metrics_df.to_csv(target_path)
+            df_list.append(temporal_metrics_df)
+            big_df_list.append(temporal_metrics_df)
+        
+        df_dataset_dict[dataset] = df_list
+        big_dataset_df = pd.concat(df_list)
+        big_dataset_df.to_csv(os.path.join(dataset_target_folder, "big_df.csv"))
+
+    big_df = pd.concat(big_df_list)
+    big_df.to_csv(os.path.join(target_folder, "big_df.csv"))
+    return df_dataset_dict
+
+def create_dataset_from_videos_eyeblink8(videos_and_labels: dict, target_folder: str, config: dict) -> list:
     df_list = []
-    subjects_to_analyze = config["subjects"]
-    scenarios_to_analyze = config["scenarios"]
-    states_to_analyze = config["states"]
+    # subjects_to_analyze = config["subjects"]
+    # scenarios_to_analyze = config["scenarios"]
+    # states_to_analyze = config["states"]
 
-    print(videos_and_labels['001'].keys())
-    print(subjects_to_analyze)
+    # subjects = { subject:data for subject, data in dataset_dict.items() if subject in subjects_to_analyze }
+    for subject, data in videos_and_labels.items():
+        video = data["video"]
+        metric_list = obtain_metrics_from_video(video, subject, config)
+        metric_df = pd.DataFrame(metric_list)[["ear1", "ear2", "ear3"]]
+        metric_df["subject"] = subject
+        target_path = os.path.join(target_folder, f"{subject}.csv")
+        metric_df.to_csv(target_path)
+        df_list.append(metric_df)
 
-    subjects = { subject:data for subject, data in videos_and_labels.items() if subject in subjects_to_analyze }
-    for subject, scenarios in subjects.items():
-        scenarios = { scenario:data for scenario, data in scenarios.items() if scenario in scenarios_to_analyze }
-        for scenario, driver_states in scenarios.items():
-            driver_states = { state:data for state, data in driver_states.items() if state in states_to_analyze }
-            for driver_state, vid_lab in driver_states.items():
-                labels = vid_lab["labels"]
-                video = vid_lab["video"]
-                print(f"{subject}_{scenario}_{driver_state}")
-                video_df = create_dataset_from_video(video, subject, config, labels)
-                video_df.to_csv(f"{target_folder}{subject}_{scenario}_{driver_state}.csv")
-                df_list.append(video_df)
+    df = pd.concat(df_list)
+    return df
 
-    return df_list
+
+def create_dataset_from_images_CEW(images, labels, target_folder: str, config: dict) -> list:
+    metric_list = []
+    ind = 0
+    for image in images:
+        result, _, _ = process_frame(image, config, mouth=False, head=False)
+        metrics = {}
+        if result is not None:
+            for ear_type in ["ear1", "ear2", "ear3"]:
+                metrics[ear_type] = result[ear_type]
+        
+        metrics["label"] = labels[ind]
+        metric_list.append(metrics)
+        ind += 1
+    
+    df = pd.DataFrame(metric_list)
+    df.to_csv(f"{target_folder}big_df.csv")
+    return df
 
 
 def create_dataset_from_videos(path, target_folder, config) -> list:

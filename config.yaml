@@ -1,23 +1,41 @@
 train_inference:
   model_features:
     # - mean_ear
-    - mean_blink_time
+    # - mean_blink_time
     - perclos
     # - blinks_per_minute
     - current_time_closed_eyes
     - yawns_per_minute
-    - head_nods_per_minute
+    # - head_nods_per_minute
 
   model: 'lgb'
   optuna: False
 
 metric_obtention:
   
+  periodical_data_max_values: 1800
+
+  detect_eyes: True
+  detect_mouth: True
+  detect_head: True
+
   eye_closure_method: 1
   eye_closure_threshold: 0.2
   main_threshold_perc: 0.45
   gray_zone_perc: 0.1
 
+  # pose_angles_detection_frequency: 3
+  # pitch_method: 1
+  # num_past_frames_pitch: 10
+  # gray_zone_pitch: 0.1
+  # head_nod_threshold: 78
+  # head_nod_threshold_perc: 0.7
+  # head_nod_y_min_threshold: 0.1
+  # num_frames_nose_tip_y: 100
+  # num_frames_new_head_nod: 15
+
+  pose_angles_detection_frequency: 3
+  pitch_method: 1
   head_nod_threshold: 45
   head_nod_threshold_perc: 0.7
   head_nod_y_min_threshold: 0.1
@@ -27,7 +45,11 @@ metric_obtention:
   num_frames_dynamic_avg: 1800
   num_frames_lag_ignore: 15
 
-  mouth_yawn_threshold: 0.75
+  mouth_closure_method: 2
+  mouth_yawn_threshold: 0.52
+  gray_zone_mouth: 0.1
+  num_past_frames_mouth: 50
+
   yawn_y_min_threshold: 0.1
   num_frames_mouth_top_y: 100
   num_frames_new_yawn: 15
@@ -38,31 +60,67 @@ metric_obtention:
   min_num_frames: 1800
   
   subjects:
-    - '001'
-    - '008'
-    - '009'
-    - '013'
-    - '023'
-    - '034'
-    - '035'
-    - '036'
+    train: []
+      # - '001'
+      # - '002'
+      # - '005'
+      # - '006'
+      # - '008'
+      # - '009'
+      # - '012'
+      # - '013'
+      # - '015'
+      # - '020'
+      # - '023'
+      # - '024'
+      # - '031'
+      # - '032'
+      # - '033'
+      # - '034'
+      # - '035'
+      # - '036'
+    test: 
+      # - '003'
+      # - '010'
+      # - '011'
+      # - '014'
+      # - '016'
+      # - '017'
+      # - '018'
+      - '019'
+      - '021'
+      - '025'
+      - '027'
+      - '028'
+      - '029'
+      - '037'
   scenarios:
-    # - glasses
+    - glasses
     # - night_noglasses
     # - nightglasses
     - noglasses
-    # - sunglasses
+    - sunglasses
   states:
     - nonsleepy
     - sleepy
     - slowBlinkWithNodding
     - yawning
+    - mix
 
   metrics_to_obtain:
     - ear
+    - ear1
+    - ear2
+    - ear3
     - mar
+    - mar1
+    - mar2
     - yaw
+    - yaw1
+    - yaw2
     - pitch
+    - pitch1
+    - pitch2 
     - nose_tip_y
     - frame_count
     - mean_ear
@@ -78,3 +136,4 @@ metric_obtention:
     - mean_left_iris_diameter
     - head_nod_count
     - head_nods_per_minute
+    - head_nod

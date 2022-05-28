@@ -10,7 +10,7 @@ cm_in_pixel = 0.0264583333
 def pix_to_cm(pixels):
     return pixels * cm_in_pixel
 
-def check_eyes_open(ear, eye_closure_threshold, gray_zone_perc, previous_eye_state) -> bool:  
+def check_eyes_open(ear, eye_closure_threshold, gray_zone_perc, previous_eye_state=None) -> bool:  
     
     upper_threshold = eye_closure_threshold * (1 + gray_zone_perc)
     lower_threshold = eye_closure_threshold * (1 - gray_zone_perc)
@@ -27,7 +27,7 @@ def check_eyes_open(ear, eye_closure_threshold, gray_zone_perc, previous_eye_sta
     return open_eye
 
 
-def check_yawn(mar, mouth_yawn_threshold) -> bool:
+def check_yawn(mar, mouth_yawn_threshold, yawn_gray_zone=None, previous_mouth_state=None) -> bool:
     return mar >= mouth_yawn_threshold
 
 
@@ -42,6 +42,10 @@ def check_head_nod(pitch, head_nod_threshold) -> bool:
     ####
 
     return pitch <= head_nod_threshold
+
+
+def check_lateral_head_movement(yaw, lateral_threshold) -> bool:
+    return abs(yaw) >= abs(lateral_threshold)
 
 
 def compute_eye_closure1(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks, iris_diameter):
@@ -83,11 +87,10 @@ def compute_eye_closure3(img, landmarks, upper_landmarks, lower_landmarks, cente
     return eye_closure
 
 
-def compute_mouth_closure(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks):
+def compute_mouth_closure1(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks):
     
     height, width, _ = img.shape
-    
-    # FIRST METHOD
+
     upper_landmarks_height = sum(landmarks[ind].y * height for ind in upper_landmarks)
     lower_landmarks_height = sum(landmarks[ind].y * height for ind in lower_landmarks)
     horizontal_distance = abs(landmarks[center_landmarks[0]].x - landmarks[center_landmarks[1]].x) * width
@@ -96,7 +99,9 @@ def compute_mouth_closure(img, landmarks, upper_landmarks, lower_landmarks, cent
     width = horizontal_distance
     mouth_closure = height / width
 
-    # SECOND METHOD
+    return mouth_closure
+
+def compute_mouth_closure2(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks):
     upper_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y]) for ind in upper_landmarks ]
     lower_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y]) for ind in lower_landmarks ]
     center_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y]) for ind in center_landmarks ]

@@ -17,6 +17,8 @@ pose_model*/
 *.pb
 *.caffemodel
 
+report.txt
+
 
 *.joblib
 

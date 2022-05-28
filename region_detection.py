@@ -283,7 +283,7 @@ def draw_head_pose_box(img, rotation_vector, translation_vector, camera_matrix, 
     return(point_2d[2], k)
 
 
-def estimate_head_pose_model(face_img, facebox, debug=False):
+def estimate_head_pose_model(face_img, drawn_img, facebox, debug=False):
     img = Image.fromarray(face_img)
     img = img.convert('RGB')
     img = head_pose_model_transformations(img)
@@ -300,7 +300,7 @@ def estimate_head_pose_model(face_img, facebox, debug=False):
     yaw = euler[:, 1].cpu().detach().numpy()[0]
     roll = euler[:, 2].cpu().detach().numpy()[0]
 
-    return {"yaw": yaw, "pitch": pitch, "roll": roll}, face_img
+    return {"yaw": yaw, "pitch": pitch, "roll": roll}, drawn_img
 
 
 def estimate_head_pose(input_image, drawn_image, landmarks, debug=False):
@@ -352,12 +352,12 @@ def estimate_head_pose(input_image, drawn_image, landmarks, debug=False):
     except:
         yaw = 90
 
-    for point in points_2D:
-        x = int(point[0])
-        y = int(point[1])
-        drawn_image = cv2.circle(drawn_image, (x, y), 2, (255, 255, 0), -1)
+    # for point in points_2D:
+    #     x = int(point[0])
+    #     y = int(point[1])
+    #     drawn_image = cv2.circle(drawn_image, (x, y), 2, (255, 255, 0), -1)
 
-    drawn_image = cv2.line(drawn_image, p1, p2, (255,255,255), 2)
+    # drawn_image = cv2.line(drawn_image, p1, p2, (255,255,255), 2)
     if debug:
         cv2.imshow('head_pose', drawn_image)
         cv2.waitKey()
