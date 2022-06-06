@@ -309,6 +309,7 @@ def estimate_head_pose(input_image, drawn_image, landmarks, debug=False):
 
     points_2D_indexes = [1, 199, 263, 33, 291, 61]
     points_2D = np.array([(landmarks[index].x * size[1], landmarks[index].y * size[0]) for index in points_2D_indexes])
+    # points_3D = np.array([(landmarks[index].x * size[1], landmarks[index].y * size[0], landmarks[index].z * size[1]) for index in points_2D_indexes])
     points_3D = np.array([
             (0.0, 0.0, 0.0),          #Nose tip
             (0.0, -330.0, -65.0),     #Chin
@@ -357,7 +358,7 @@ def estimate_head_pose(input_image, drawn_image, landmarks, debug=False):
     #     y = int(point[1])
     #     drawn_image = cv2.circle(drawn_image, (x, y), 2, (255, 255, 0), -1)
 
-    # drawn_image = cv2.line(drawn_image, p1, p2, (255,255,255), 2)
+    drawn_image = cv2.line(drawn_image, p1, p2, (255,255,255), 2)
     if debug:
         cv2.imshow('head_pose', drawn_image)
         cv2.waitKey()

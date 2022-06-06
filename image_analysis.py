@@ -12,8 +12,9 @@ def pix_to_cm(pixels):
 
 def check_eyes_open(ear, eye_closure_threshold, gray_zone_perc, previous_eye_state=None) -> bool:  
     
-    upper_threshold = eye_closure_threshold * (1 + gray_zone_perc)
-    lower_threshold = eye_closure_threshold * (1 - gray_zone_perc)
+    # TODO: valorar si hacer la gray zone como en los yawns
+    upper_threshold = eye_closure_threshold + gray_zone_perc
+    lower_threshold = eye_closure_threshold - gray_zone_perc
 
     if ear < lower_threshold:
         open_eye = False
@@ -28,7 +29,18 @@ def check_eyes_open(ear, eye_closure_threshold, gray_zone_perc, previous_eye_sta
 
 
 def check_yawn(mar, mouth_yawn_threshold, yawn_gray_zone=None, previous_mouth_state=None) -> bool:
-    return mar >= mouth_yawn_threshold
+    upper_threshold = mouth_yawn_threshold + yawn_gray_zone
+    lower_threshold = mouth_yawn_threshold - yawn_gray_zone
+
+    if mar < lower_threshold:
+        current_yawn_state = False
+    elif mar > upper_threshold:
+        current_yawn_state = True
+    else:
+        current_yawn_state = mar >= mouth_yawn_threshold
+        if previous_mouth_state is not None:
+            current_yawn_state = previous_mouth_state
+    return current_yawn_state
 
 
 def check_head_nod(pitch, head_nod_threshold) -> bool: 
@@ -61,9 +73,10 @@ def compute_eye_closure1(img, landmarks, upper_landmarks, lower_landmarks, cente
     return eye_closure
 
 def compute_eye_closure2(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks, iris_diameter):
-    upper_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y, landmarks[ind].z ]) for ind in upper_landmarks ]
-    lower_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y, landmarks[ind].z ]) for ind in lower_landmarks ]
-    center_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y, landmarks[ind].z ]) for ind in center_landmarks ]
+    height, width, _ = img.shape
+    upper_landmarks = [ np.array([landmarks[ind].x * width, landmarks[ind].y * height ]) for ind in upper_landmarks ]
+    lower_landmarks = [ np.array([landmarks[ind].x * width, landmarks[ind].y * height ]) for ind in lower_landmarks ]
+    center_landmarks = [ np.array([landmarks[ind].x * width, landmarks[ind].y * height ]) for ind in center_landmarks ]
 
     length = len(upper_landmarks)
     sum_of_vert_distances = 0
@@ -73,17 +86,29 @@ def compute_eye_closure2(img, landmarks, upper_landmarks, lower_landmarks, cente
     sum_of_vert_distances /= length
     horizontal_distance = np.linalg.norm(center_landmarks[0] - center_landmarks[1])
     eye_closure = sum_of_vert_distances / horizontal_distance
+
     return eye_closure
 
 def compute_eye_closure3(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks, iris_diameter):
-    height, width, _ = img.shape
     upper_landmarks_height = sum(landmarks[ind].y for ind in upper_landmarks)
     lower_landmarks_height = sum(landmarks[ind].y for ind in lower_landmarks)
     
-    horizontal_distance = abs(landmarks[center_landmarks[0]].x - landmarks[center_landmarks[1]].x) * width
     height = (lower_landmarks_height - upper_landmarks_height)/len(upper_landmarks)
 
     eye_closure = min(1, height / iris_diameter)
+    return eye_closure
+
+def compute_eye_closure4(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks, iris_diameter):
+    upper_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y ]) for ind in upper_landmarks ]
+    lower_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y ]) for ind in lower_landmarks ]
+    
+    length = len(upper_landmarks)
+    sum_of_vert_distances = 0
+    for ind in range(0, length):
+        sum_of_vert_distances += np.linalg.norm(upper_landmarks[ind] - lower_landmarks[ind])
+    sum_of_vert_distances /= length
+
+    eye_closure = min(1, sum_of_vert_distances / iris_diameter)
     return eye_closure
 
 
@@ -102,9 +127,10 @@ def compute_mouth_closure1(img, landmarks, upper_landmarks, lower_landmarks, cen
     return mouth_closure
 
 def compute_mouth_closure2(img, landmarks, upper_landmarks, lower_landmarks, center_landmarks):
-    upper_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y]) for ind in upper_landmarks ]
-    lower_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y]) for ind in lower_landmarks ]
-    center_landmarks = [ np.array([landmarks[ind].x, landmarks[ind].y]) for ind in center_landmarks ]
+    height, width, _ = img.shape
+    upper_landmarks = [ np.array([landmarks[ind].x * width, landmarks[ind].y * height]) for ind in upper_landmarks ]
+    lower_landmarks = [ np.array([landmarks[ind].x * width, landmarks[ind].y * height]) for ind in lower_landmarks ]
+    center_landmarks = [ np.array([landmarks[ind].x * width, landmarks[ind].y * height]) for ind in center_landmarks ]
 
     length = len(upper_landmarks)
     sum_of_vert_distances = 0

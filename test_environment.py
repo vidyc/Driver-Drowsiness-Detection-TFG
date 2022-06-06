@@ -338,9 +338,11 @@ class TestEnvironment:
     def test_blink_detection_eyeblink8(self, source_df, config):
         videos_and_labels = self.get_videos_and_labels_eyeblink8()
         method = config["eye_closure_method"]
-        threshold = config["eye_closure_threshold"]
+        threshold_base = config["eye_closure_threshold"]
         threshold_perc = config["main_threshold_perc"]
         gray_zone_perc = config["gray_zone_perc"]
+        num_ear_past_frames = config["num_ear_past_frames"]
+        alpha_val = config["alpha_val"]
 
         performance_metrics = {"total": {}}
         num_total_hits = 0
@@ -353,6 +355,7 @@ class TestEnvironment:
         num_total_false_positives = 0
         num_total_false_negatives = 0
         for subject, data in videos_and_labels.items():
+            threshold = threshold_base
             subject_df = source_df[source_df["subject"] == subject]
             performance_metrics[subject] = {}
             blink_intervals = data["blink_intervals"]
@@ -361,14 +364,20 @@ class TestEnvironment:
             blink_set = []
             method_blink_intervals = []
             last_ear_values = []
+            valor_esperado_ear = 0
             for frame_number, ear_value in enumerate(ear_info):
                 if math.isnan(ear_value):
                     continue
 
-                if last_ear_values != []:
-                    threshold = threshold_perc * sum(last_ear_values) / len(last_ear_values)
+                # if last_ear_values != []:
+                #     threshold = threshold_perc * sum(last_ear_values) / len(last_ear_values)
 
-                current_eye_state = image_analysis.check_eyes_open(ear_value, threshold, gray_zone_perc, previous_eye_state)
+                gray_zone = 0
+                if valor_esperado_ear != 0:
+                    threshold = threshold_perc * valor_esperado_ear
+                    gray_zone = gray_zone_perc * valor_esperado_ear
+
+                current_eye_state = image_analysis.check_eyes_open(ear_value, threshold, gray_zone, previous_eye_state)
                 if not current_eye_state:
                     blink_set.append(frame_number)
                 
@@ -377,9 +386,13 @@ class TestEnvironment:
                     blink_set = []
                 previous_eye_state = current_eye_state
                 
-                if len(last_ear_values) >= config["num_frames_dynamic_avg"]:
-                    last_ear_values.pop(0)
-                last_ear_values.append(ear_value)
+                if current_eye_state:
+                    valor_esperado_ear = (1-alpha_val) * valor_esperado_ear + alpha_val * ear_value
+
+                # if current_eye_state and num_ear_past_frames > 0:
+                #     if len(last_ear_values) >= num_ear_past_frames:
+                #         last_ear_values.pop(0)
+                #     last_ear_values.append(ear_value)
             
             real_num_blinks = len(blink_intervals)
             num_total_real_blinks += real_num_blinks
@@ -458,9 +471,9 @@ class TestEnvironment:
             else:
                 performance_metrics[subject]["recall"] = None
             
-            if performance_metrics[subject]["recall"] is not None and performance_metrics[subject]["precision"] is not None:
-                recall = performance_metrics[subject]["recall"]
-                precision = performance_metrics[subject]["precision"]
+            recall = performance_metrics[subject]["recall"]
+            precision = performance_metrics[subject]["precision"]
+            if performance_metrics[subject]["recall"] is not None and performance_metrics[subject]["precision"] is not None and (recall + precision) > 0:
                 performance_metrics[subject]["f1-score"] = 2 * (recall * precision) / (recall + precision)
                     
         performance_metrics["total"]["num_real_blinks"] = num_total_real_blinks
@@ -489,9 +502,9 @@ class TestEnvironment:
         else:
             performance_metrics["total"]["recall"] = None
 
-        if performance_metrics["total"]["recall"] is not None and performance_metrics["total"]["precision"] is not None:
-            recall = performance_metrics["total"]["recall"]
-            precision = performance_metrics["total"]["precision"]
+        recall = performance_metrics["total"]["recall"]
+        precision = performance_metrics["total"]["precision"]
+        if performance_metrics["total"]["recall"] is not None and performance_metrics["total"]["precision"] is not None and (recall + precision) > 0:
             performance_metrics["total"]["f1-score"] = 2 * (recall * precision) / (recall + precision)
         return performance_metrics
 
@@ -501,6 +514,7 @@ class TestEnvironment:
         threshold = config["mouth_yawn_threshold"]
         gray_zone = config["gray_zone_mouth"]
         num_past_frames = config["num_past_frames_mouth"]
+        alpha_val = config["alpha_val"]
 
         performance_metrics = {"total": {}}
         num_total_hits = 0
@@ -544,6 +558,7 @@ class TestEnvironment:
             yawn_set = []
             method_yawn_intervals = []
             last_mar_values = []
+            valor_esperado_mar = -1
             for frame_number, mar_value in enumerate(mar_info):
                 if math.isnan(mar_value):
                     continue
@@ -551,12 +566,19 @@ class TestEnvironment:
                 mean_mar = mar_value
                 if last_mar_values != []:
                     mean_mar = (sum(last_mar_values) + mar_value) / (len(last_mar_values) + 1)
+                
+                # if valor_esperado_mar == -1:
+                #     valor_esperado_mar = mar_value
+                # else:
+                #     valor_esperado_mar = (1-alpha_val) * valor_esperado_mar + alpha_val * mar_value
+
+                # # mean_mar = valor_esperado_mar
 
                 upper_threshold = threshold + gray_zone
                 lower_threshold = threshold - gray_zone
                 if mean_mar < lower_threshold:
                     current_yawn_state = False
-                elif mean_mar > upper_threshold:
+                elif mean_mar >= upper_threshold:
                     current_yawn_state = True
                 else:
                     current_yawn_state = mean_mar >= threshold
@@ -696,9 +718,9 @@ class TestEnvironment:
         else:
             performance_metrics["total"]["recall"] = None
 
-        if performance_metrics["total"]["recall"] is not None and performance_metrics["total"]["precision"] is not None:
-            recall = performance_metrics["total"]["recall"]
-            precision = performance_metrics["total"]["precision"]
+        recall = performance_metrics["total"]["recall"]
+        precision = performance_metrics["total"]["precision"]
+        if performance_metrics["total"]["recall"] is not None and performance_metrics["total"]["precision"] is not None and (recall + precision) > 0:
             performance_metrics["total"]["f1-score"] = 2 * (recall * precision) / (recall + precision)
         return performance_metrics
     
@@ -724,7 +746,7 @@ class TestEnvironment:
 
         id_list = list(source_df["id"].unique())
         for id in id_list:
-            if "sunglasses" in id:
+            if "noglasses" not in id:
                 continue
             
             id_df = source_df[source_df["id"] == id]

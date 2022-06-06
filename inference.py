@@ -6,6 +6,7 @@ import os
 from collections import Counter
 from collections import defaultdict
 from sklearn import metrics
+import copy
 
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
@@ -34,43 +35,7 @@ def inference_on_video(input_video, model, model_features, config, path="output_
         "mean_ear_3_frames": 0,
     }
     global_metrics = defaultdict(lambda: 0)
-    periodical_data = { 
-                        "frame_count" : 0,
-                        "closed_eye_frame_count" : 0,
-                        "closed_eye_frame_values": [],
-                        "current_frames_closed_eyes" : 0,
-                        "previous_current_frames_closed_eyes": 0,
-                        "max_frames_closed_eyes" : 0,
-                        "mean_frames_closed_eyes" : 0,
-                        "num_blinks" : 0,
-                        "blink_values": [],
-                        "previous_frame_eye_state" : None,
-                        "previous2_frame_eye_state" : None,
-                        "ear_values" : [], 
-                        "sum_ear": 0,
-                        "sum_first_ear": 0,
-                        "sum_left_iris_diameter": 0,
-                        "sum_right_iris_diameter": 0,
-                        "current_eye_state": None,
-                        "head_nod_total_frame_count": 0,
-                        "previous_head_nod_state": False,
-                        "head_nod_last_frame": -1000,
-                        "head_nod_count": 0,
-                        "head_nod_values": [],
-                        "sum_first_pitch": 0,
-                        "pitch_values": [],
-                        "yaw_values": [],
-                        "yawn_total_frame_count": 0,
-                        "previous_yawn_state": False,
-                        "yawn_last_frame": -1000,
-                        "num_yawns" : 0,
-                        "yawn_values": [],
-                        "mar_values": [],
-                        "nose_tip_y_values": [],
-                        "mouth_top_y_values": [],
-                        "sum_first_mouth_width": 0,
-                        "mean_first_ear": 0,
-                       }
+    periodical_data = copy.deepcopy(mo.periodical_data_initial_state)
 
 
     debug = False
@@ -105,7 +70,8 @@ def inference_on_video(input_video, model, model_features, config, path="output_
             if current_metrics["frame_metrics"] is not None:
                 frame_metrics = current_metrics["frame_metrics"]
                 global_metrics = current_metrics["global_metrics"]
-                selected_metrics = global_metrics
+                selected_metrics = dict(list(global_metrics.items())  
+                                      + list(frame_metrics.items()))
 
                 x_data = np.array(list({ metric:selected_metrics[metric] for metric in model_features }.values())).reshape(1, -1)
                 # x_data = np.array(list({ metric:value for metric, value in selected_metrics.items() if metric in model_features }.values())).reshape(1, -1)
@@ -137,15 +103,15 @@ def inference_on_video(input_video, model, model_features, config, path="output_
             "frame_count": periodical_data["frame_count"],
             # "closed_eye_frame_count": periodical_data["closed_eye_frame_count"],
             # "perclos": round(global_metrics["perclos"], 2),
-            # "current_frames_closed_eyes": periodical_data["current_frames_closed_eyes"],
-            # "num_blinks": periodical_data["num_blinks"],
+            "current_frames_closed_eyes": periodical_data["current_frames_closed_eyes"],
+            "num_blinks": periodical_data["num_blinks"],
             # # "blinks_per_minute": round(global_metrics["blinks_per_minute"], 2),
             # # "mean_blink_time": round(global_metrics["mean_blink_time"], 2),
             # "previous_eye_state": periodical_data["previous_frame_eye_state"],
-            # "current_eye_state": periodical_data["current_eye_state"],
-            # "ear": round(frame_metrics["ear"], 2),
+            "current_eye_state": periodical_data["current_eye_state"],
+            "ear": round(frame_metrics["ear"], 2),
             # "mean_ear_3_frames": round(frame_metrics["mean_ear_3_frames"], 2),
-            # "mean_ear_last_minute": round(mean_ear_last_minute, 2),
+            "mean_ear_last_minute": round(mean_ear_last_minute, 2),
             # "mean_EAR": round(periodical_data["mean_first_ear"], 2),
             "num_yawns": periodical_data["num_yawns"],
             "mar": round(frame_metrics["mar"], 2),
@@ -153,9 +119,9 @@ def inference_on_video(input_video, model, model_features, config, path="output_
             "yawn_total_frames": periodical_data["yawn_total_frame_count"],
             "yawns_per_minute": round(global_metrics["yawns_per_minute"], 2),
             "prediction": drowsiness_state,
-            "yaw": round(frame_metrics["yaw"], 2),
+            "yaw": round(frame_metrics["yaw2"], 2),
             # "mean_yaw_3_frames": round(frame_metrics["mean_yaw_3_frames"], 2),
-            "pitch": round(frame_metrics["pitch"], 2),
+            "pitch": round(frame_metrics["pitch2"], 2),
             # "mean_first_pitch": round(periodical_data["mean_first_pitch"], 2),
             # "mean_last_pitch": mean_last_pitch,
             # "current_pitch_threshold": round(mean_last_pitch * config["head_nod_threshold_perc"]),
