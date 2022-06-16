@@ -95,13 +95,13 @@ if __name__ == "__main__":
         
         return {"recall": recall, "precision": precision, "f1_score": f1_score}
 
-    if True:
-        csv_path = "NTHUDDD_dataset/train/001_noglasses_sleepy.csv"
+    if False:
+        csv_path = "NTHUDDD_dataset2/train/008_noglasses_slowBlinkWithNodding.csv"
         df = pd.read_csv(csv_path)
         processed_df = mo.obtain_metrics_from_df(df, config["metric_obtention"])
 
-        target_col = "eye"
-        method_col = "open_eyes"
+        target_col = "head"
+        method_col = "head_nod"
 
         yawn_states = list(processed_df[method_col])
         real_yawn_states = list(processed_df[target_col])
@@ -112,10 +112,10 @@ if __name__ == "__main__":
             if math.isnan(yawn_state):
                 continue
 
-            if not yawn_state:
+            if yawn_state:
                 yawn_set.append(frame_number)
             
-            if  yawn_state and not previous_yawn_state:
+            if  not yawn_state and previous_yawn_state:
                 method_yawn_intervals.append(yawn_set)
                 yawn_set = []
 
@@ -161,13 +161,13 @@ if __name__ == "__main__":
         print(results["predictions"])
         print(results["performance_metrics"])
 
-    if False:
+    if True:
         lgb_model = load("lgb_models/lgb_model_0.joblib")
         inference.inference_on_webcam(lgb_model, features, config["metric_obtention"])
     
-    if True:
+    if False:
         dlib = True
-        lgb_model = load("logreg_model_0.joblib")
+        lgb_model = load("lgb_models/lgb_model_0.joblib")
         video_folder = "images/UTA_dataset/"
         video_paths = [
             #"images/DROZY_dataset/videos_i8/6-1.mp4",
@@ -181,13 +181,13 @@ if __name__ == "__main__":
             # "images/UTA_dataset/Fold3_part2/33/10.mp4",
             #"images/UTA_dataset/Fold3_part1/28/10.MOV",
             # "images/adrian/adrian3.mp4",
-            # "images/adrian/facha.mp4",
+            "images/adrian/facha.mp4",
             # "images/adrian/new_blink.mp4",
             # "images/adrian/ducha_fria.mp4",
             # "images/adrian/yarify.mp4",
-            # "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/020/noglasses/slowBlinkWithNodding.avi",
-            # "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/001/noglasses/sleepyCombination.avi",
-            "images/NTHUDDD_dataset/Testing_Dataset/028/noglasses/028_noglasses_mix.mp4",
+            # "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/008/noglasses/slowBlinkWithNodding.avi",
+            # "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Training Dataset/001/noglasses/nonsleepyCombination.avi",
+            # "images/NTHUDDD_dataset/Testing_Dataset/028/noglasses/028_noglasses_mix.mp4",
             # "images/eyeblink8/11/27122013_154548_cam.avi",
             # "images/NTHUDDD_dataset/Training_Evaluation_Dataset/Evaluation Dataset/022/022_noglasses_mix.mp4",
         ]
@@ -206,7 +206,7 @@ if __name__ == "__main__":
         df_dataset_dict = mo.create_dataset_from_videos_NTHU(videos_and_labels, target_folder="NTHUDDD_dataset2/", config=config["metric_obtention"])
 
     if False:
-        df_dataset_dict = mo.create_dataset_from_df_NTHU(source_folder="NTHUDDD_dataset2/", target_folder="NTHUDDD_dataset2_step2_600/", config=config["metric_obtention"])
+        df_dataset_dict = mo.create_dataset_from_df_NTHU(source_folder="NTHUDDD_dataset2/", target_folder="NTHUDDD_dataset2_nuevosmetodos/", config=config["metric_obtention"])
 
     ### EXPERIMENTO 1: PERFORMANCE DETECCION ESTADO DEL OJO (ABIERTO/CERRADO) DE LOS 3 METODOS PROBADOS
     if False:
@@ -305,10 +305,11 @@ if __name__ == "__main__":
         # method_threshold_list = [0.45, 0.45, 0.45]
         # method_gray_zone_list = [0.1, 0.1, 0.1]
         df_list = []
-        for threshold_val in range(20, 100, 5):
-            for gray_zone_val in range(0, 250, 25):
+        for threshold_val in range(0, 100, 5):
+            for gray_zone_val in range(250, 450, 25):
                 # for alpha_val in range(0, 100, 5):
-                for num_past_frames_mouth in range(0, 120, 20):
+                # for num_past_frames_mouth in range(0, 70, 10):
+                    num_past_frames_mouth = 0
                     main_threshold = threshold_val / 100
                     gray_zone_mouth = gray_zone_val / 1000
                     # alpha_val_perc = alpha_val / 100
@@ -335,7 +336,7 @@ if __name__ == "__main__":
                         df_list.append(df)
         
         big_df = pd.concat(df_list)
-        big_df.to_csv(f"experiment{experiment}_framespast_gray.csv")
+        big_df.to_csv(f"experiment{experiment}_grayzone_extended.csv")
     
     ### EXPERIMENTOS 6: PERFORMANCE DETECCION CABECEOS SOBRE VIDEOS
     if False:
@@ -343,7 +344,7 @@ if __name__ == "__main__":
         # big_df = mo.create_dataset_from_videos_eyeblink8(videos_and_labels=videos_and_labels, target_folder="eyeblink8_dataset/", config=config["metric_obtention"])
         # big_df.to_csv("eyeblink8_dataset/big_df.csv")
         experiment = 6
-        source_df = pd.read_csv("NTHUDDD_dataset/big_df.csv")
+        source_df = pd.read_csv("NTHUDDD_dataset2/big_df.csv")
 
         method_ind_list = [1, 2]
         df_list = []
@@ -361,68 +362,82 @@ if __name__ == "__main__":
             for i in range(1, num_scores):
                 prune = prune and ( scores[i] >= scores[i - 1] )
 
-            return prune            
+            return False            
 
         previous2_f1_score = -2 ## hace 2 mediciones
         previous_f1_score = -1  ## ultima medicion
         prune = False
-        for threshold_perc_val in range(80, 91, 1):
+        for threshold_perc_val in range(75, 100, 5):
             main_threshold_perc = threshold_perc_val / 100
             num_consecutive_prunes = 0
-            for gray_zone_val in range(100, 210, 10):
+            for gray_zone_val in range(0, 200, 25):
                 gray_zone = gray_zone_val / 1000
-                current_f1_score = 0
-                previous_f1_score = -1
-                previous2_f1_score = -2
+                num_past_frames = 0
+
+                # current_f1_score = 0
+                # previous_f1_score = -1
+                # previous2_f1_score = -2
                 
-                if prune:
-                    num_consecutive_prunes += 1
-                else:
-                    num_consecutive_prunes = 0
+                # if prune:
+                #     num_consecutive_prunes += 1
+                # else:
+                #     num_consecutive_prunes = 0
 
-                if num_consecutive_prunes > 4:
-                    break
+                # if num_consecutive_prunes > 4:
+                #     break
 
-                for num_past_frames in range(0, 11, 1):
-                    print(f"THRESHOLD_PERC: {main_threshold_perc}")
-                    print(f"GRAY_ZONE: {gray_zone_val}")
-                    print(f"NUM_PAST_FRAMES: {num_past_frames}")
-                    # for ind, method in enumerate(method_ind_list):
-                    method = 1
-                    config_copy = copy.deepcopy(config)
-                    # config_copy["metric_obtention"]["pitch_method"] = method
-                    config_copy["metric_obtention"]["head_nod_threshold_perc"] = main_threshold_perc
-                    config_copy["metric_obtention"]["gray_zone_pitch"] = gray_zone
-                    config_copy["metric_obtention"]["num_past_frames_pitch"] = num_past_frames
+                for num_past_frames in range(5, 15, 5):
+                    for num_past_frames_th in range(0, 2100, 600):
+            # for alpha_val in range(0, 100, 5):
+                # alpha_val_perc = alpha_val / 100
+                        print(f"THRESHOLD_PERC: {threshold_perc_val}")
+                        print(f"GRAY_ZONE: {gray_zone_val}")
+                        print(f"NUM_PAST_FRAMES: {num_past_frames}")
+                        print(f"NUM_PAST_FRAMES_TH: {num_past_frames_th}")
+                        # print(f"ALPHA VAL: {alpha_val_perc}")
+                        for ind, method in enumerate(method_ind_list):
+        # method = 1
+        # main_threshold_perc = 0.5
+        # gray_zone = 0.05
+        # num_past_frames = 10
+        # num_past_frames_th = 900
+                            config_copy = copy.deepcopy(config)
+                            config_copy["metric_obtention"]["pitch_method"] = method
+                            # config_copy["metric_obtention"]["head_nod_threshold"] = threshold_perc_val
+                            config_copy["metric_obtention"]["head_nod_threshold_perc"] = main_threshold_perc
+                            config_copy["metric_obtention"]["gray_zone_pitch"] = gray_zone
+                            config_copy["metric_obtention"]["num_past_frames_pitch"] = num_past_frames
+                            config_copy["metric_obtention"]["num_past_frames_th"] = num_past_frames_th
+                            config_copy["metric_obtention"]["alpha_val"] = 0
 
-                    performance_metrics = test_environment.test_headnod_detection_NTHUDDD(source_df, config_copy["metric_obtention"])
-                    current_f1_score = performance_metrics["total"]["f1-score"]
+                            performance_metrics = test_environment.test_headnod_detection_NTHUDDD(source_df, config_copy["metric_obtention"])
+                            current_f1_score = performance_metrics["total"]["f1-score"]
 
-                    print(f"METHOD {method}:")
-                    print(performance_metrics["total"])
-                    df = pd.DataFrame.from_dict(performance_metrics, orient="index")
-                    df["method"] = method
-                    df["threshold_perc"] = main_threshold_perc
-                    # df["gray_zone"] = gray_zone
-                    # df["num_past_frames"] = num_past_frames
-                    df["gray_zone"] = gray_zone
-                    df["num_past_frames"] = num_past_frames
-                    df.to_csv(f"test{experiment}.csv")
-                    df_list.append(df)
-                    
-                    prune = should_prune([current_f1_score, previous_f1_score, previous2_f1_score])
-                    if prune:
-                        print(f"PRUNING EXPLORATION... TH:{main_threshold_perc}, GZ:{gray_zone}, PF:{num_past_frames}")
-                        print(current_f1_score)
-                        print(previous_f1_score)
-                        print(previous2_f1_score)
-                        break
+                            print(f"METHOD {method}:")
+                            print(performance_metrics["total"])
+                            df = pd.DataFrame.from_dict(performance_metrics, orient="index")
+                            df["method"] = method
+                            df["threshold_perc"] = threshold_perc_val
+                            df["gray_zone"] = gray_zone
+                            df["num_past_frames"] = num_past_frames
+                            df["num_past_frames_th"] = num_past_frames_th
+                            # df["alpha_val"] = alpha_val_perc
+                            df.to_csv(f"test{experiment}.csv")
+                            df_list.append(df)
+                            
+                            # prune = should_prune([current_f1_score, previous_f1_score, previous2_f1_score])
+                            # if prune:
+                            #     print(f"PRUNING EXPLORATION... TH:{main_threshold_perc}, GZ:{gray_zone}, PF:{num_past_frames}")
+                            #     print(current_f1_score)
+                            #     print(previous_f1_score)
+                            #     print(previous2_f1_score)
+                            #     break
 
-                    previous2_f1_score = previous_f1_score
-                    previous_f1_score = current_f1_score
+                            previous2_f1_score = previous_f1_score
+                            previous_f1_score = current_f1_score
             
         big_df = pd.concat(df_list)
-        big_df.to_csv(f"experiment{experiment}_pruning.csv")
+        big_df.to_csv(f"experiment{experiment}_framepast_gray+suav+dyn3.csv")
 
     if False:
 

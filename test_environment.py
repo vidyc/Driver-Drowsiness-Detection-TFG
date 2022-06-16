@@ -346,9 +346,11 @@ class TestEnvironment:
 
         performance_metrics = {"total": {}}
         num_total_hits = 0
+        
         num_total_real_closed_eyes = 0
         num_total_method_closed_eyes = 0
         num_total_hit_closed_eyes = 0
+
         num_total_real_blinks = 0
         num_total_method_blinks = 0
         num_total_true_positives = 0
@@ -358,7 +360,11 @@ class TestEnvironment:
             threshold = threshold_base
             subject_df = source_df[source_df["subject"] == subject]
             performance_metrics[subject] = {}
+            
             blink_intervals = data["blink_intervals"]
+            left_eye_states = data["left_eye_states"]
+            right_eye_states = data["right_eye_states"]
+
             ear_info = np.array(subject_df[f"ear{method}"])
             previous_eye_state = True
             blink_set = []
@@ -434,6 +440,8 @@ class TestEnvironment:
                 num_false_positives += 1
                 num_total_false_positives += 1
 
+
+            # fully_closed_intervals = 
             num_real_closed_eyes = sum([len(interval) for interval in blink_intervals])
             num_method_closed_eyes = sum([len(interval) for interval in method_blink_intervals])
 
@@ -729,8 +737,10 @@ class TestEnvironment:
         method = config["pitch_method"]
         threshold = config["head_nod_threshold"]
         threshold_perc = config["head_nod_threshold_perc"]
-        # gray_zone = config["gray_zone_pitch"]
-        # num_past_frames = config["num_past_frames_pitch"]
+        gray_zone_perc = config["gray_zone_pitch"]
+        num_past_frames = config["num_past_frames_pitch"]
+        num_past_frames_th = config["num_past_frames_th"]
+        alpha_val = config["alpha_val"]
 
         performance_metrics = {"total": {}}
         num_total_hits = 0
@@ -750,8 +760,8 @@ class TestEnvironment:
                 continue
             
             id_df = source_df[source_df["id"] == id]
-            processed_df = mo.obtain_metrics_from_df(id_df, config)
-            head_nod_states = list(processed_df["head_nod"])
+            # processed_df = mo.obtain_metrics_from_df(id_df, config)
+            # head_nod_states = list(processed_df["head_nod"])
 
             performance_metrics[id] = {}
             
@@ -775,44 +785,53 @@ class TestEnvironment:
                 previous_label = label
 
             
-            # pitch_info = np.array(id_df[f"pitch{method}"])
+            pitch_info = np.array(id_df[f"pitch{method}"])
             # nose_tip_info = np.array(id_df["nose_tip_y"])
             previous_headnod_state = None
             headnod_set = []
             method_headnod_intervals = []
             last_pitch_values = []
+            last_pos_pitch_values = []
             nose_tip_values = []
             threshold_val = threshold
-            for frame_number, current_headnod_state in enumerate(head_nod_states):
-                if math.isnan(current_headnod_state):
+            valor_esperado_pitch = 0
+            for frame_number, pitch_value in enumerate(pitch_info):
+                if math.isnan(pitch_value):
                     continue
                 
                 # nose_tip = nose_tip_info[frame_number]
-                # mean_pitch = pitch_value
+                mean_pitch = pitch_value
 
                 # possible_head_nod = True
                 # if nose_tip_values != []:
                 #     mean_nose_tip_y = sum(nose_tip_values) / len(nose_tip_values)
                 #     nose_tip_y_threshold = mean_nose_tip_y + config["head_nod_y_min_threshold"]
                 #     possible_head_nod = nose_tip >= nose_tip_y_threshold
+                gray_zone = 0
+                if last_pos_pitch_values != [] and num_past_frames_th > 0:
+                    threshold_val = threshold_perc * sum(last_pos_pitch_values) / len(last_pos_pitch_values)
+                    gray_zone = gray_zone_perc * sum(last_pos_pitch_values) / len(last_pos_pitch_values)
 
-                # if last_pitch_values != [] and num_past_frames > 0:
-                #     threshold_val = threshold_perc * 100#sum(last_pitch_values) / len(last_pitch_values)
-                    
-                #     pitch_last = min(num_past_frames, len(last_pitch_values))
-                #     pitch_values_to_analyze = last_pitch_values[-pitch_last:]
-                #     mean_pitch = (sum(pitch_values_to_analyze) + pitch_value) / (pitch_last + 1)
+                if last_pitch_values != [] and num_past_frames > 0:
+                    pitch_last = min(num_past_frames, len(last_pitch_values))
+                    pitch_values_to_analyze = last_pitch_values[-pitch_last:]
+                    mean_pitch = (sum(pitch_values_to_analyze) + pitch_value) / (pitch_last + 1)
+                    # mean_pitch = (sum(last_pitch_values) + pitch_value) / (len(last_pitch_values) + 1)
 
-                # upper_threshold = threshold_perc*100 + gray_zone
-                # lower_threshold = threshold_perc*100 - gray_zone
-                # if mean_pitch < lower_threshold:
-                #     current_headnod_state = True
-                # elif mean_pitch > upper_threshold:
-                #     current_headnod_state = False
-                # else:
-                #     current_headnod_state = mean_pitch <= threshold_perc*100
-                #     if previous_headnod_state is not None:
-                #         current_headnod_state = previous_headnod_state
+                # if valor_esperado_pitch != 0:
+                #     threshold = threshold_perc * valor_esperado_pitch
+                #     gray_zone = gray_zone_perc * valor_esperado_pitch
+
+                upper_threshold = threshold_val + gray_zone
+                lower_threshold = threshold_val - gray_zone
+                if mean_pitch < lower_threshold:
+                    current_headnod_state = True
+                elif mean_pitch > upper_threshold:
+                    current_headnod_state = False
+                else:
+                    current_headnod_state = mean_pitch <= threshold_val
+                    if previous_headnod_state is not None:
+                        current_headnod_state = previous_headnod_state
                 # current_headnod_state = possible_head_nod and mean_pitch <= threshold_perc*100
 
                 if current_headnod_state:
@@ -823,9 +842,18 @@ class TestEnvironment:
                     headnod_set = []
                 previous_headnod_state = current_headnod_state
                 
-                # if len(last_pitch_values) >= 100:
-                #     last_pitch_values.pop(0)
-                # last_pitch_values.append(pitch_value)
+                if not current_headnod_state and num_past_frames_th > 0:
+                    if len(last_pos_pitch_values) >= num_past_frames_th:
+                        last_pos_pitch_values.pop(0)
+                    last_pos_pitch_values.append(pitch_value)
+                
+                if num_past_frames > 0:
+                    if len(last_pitch_values) >= num_past_frames:
+                        last_pitch_values.pop(0)
+                    last_pitch_values.append(pitch_value)
+
+                # if not current_headnod_state:
+                #     valor_esperado_pitch = (1-alpha_val) * valor_esperado_pitch + alpha_val * pitch_value
 
                 # if len(nose_tip_values) >= config["num_frames_nose_tip_y"]:
                 #     nose_tip_values.pop(0)
@@ -971,10 +999,14 @@ class TestEnvironment:
         previous_blink_state = -1
         blink_set = []
         blink_intervals = []
+        left_eye_states = []
+        right_eye_states = []
         for i in range(ind, line_length-1):
             tokens = lines[i].split(":")
             frame_number = int(tokens[0])
             eye_blink_state = int(tokens[1])
+            fully_closed_left = tokens[3] == 'C'
+            fully_closed_right = tokens[5] == 'C'
             
             if eye_blink_state == -1 and previous_blink_state != -1:
                 blink_intervals.append(blink_set)
@@ -988,9 +1020,11 @@ class TestEnvironment:
                 blink_set.append(frame_number)
 
             labels[frame_number] = eye_blink_state == -1
+            left_eye_states.append(fully_closed_left)
+            right_eye_states.append(fully_closed_right)
             previous_blink_state = eye_blink_state
         
-        return {"blink_intervals": blink_intervals, "labels": labels}
+        return {"blink_intervals": blink_intervals, "labels": labels, "left_eye_states": left_eye_states, "right_eye_states": right_eye_states}
 
     def get_videos_and_labels_eyeblink8(self):
         video_dict = {}
@@ -1010,6 +1044,8 @@ class TestEnvironment:
                         label_data = self.process_label_file_eyeblink8(data_file)
                         video_dict[subject]["blink_intervals"] = label_data["blink_intervals"]
                         video_dict[subject]["labels"] = label_data["labels"]
+                        video_dict[subject]["left_eye_states"] = label_data["left_eye_states"]
+                        video_dict[subject]["right_eye_states"] = label_data["right_eye_states"]
             
         return video_dict
 

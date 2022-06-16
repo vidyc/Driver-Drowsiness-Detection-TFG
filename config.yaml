@@ -1,18 +1,5 @@
 train_inference:
-  model_features:
-    # - mean_ear
-    # - mean_blink_time
-    - ear
-    - mar
-    - pitch
-    - perclos
-    # - blinks_per_minute
-    - current_time_closed_eyes
-    - yawns_per_minute
-    - head_nods_per_minute
-    # - open_eyes
-    # - head_nod
-    # - yawn
+  model_features: ["yaw", "ear", "mar", "pitch", 'perclos', 'current_time_closed_eyes', "blinks_per_minute", "mean_blink_time", "yawns_per_minute", "head_nods_per_minute"]
 
   model: 'lgb'
   optuna: False
@@ -22,34 +9,46 @@ metric_obtention:
   periodical_data_max_values: 600
 
   detect_eyes: True
-  detect_mouth: False
-  detect_head: False
+  detect_mouth: True
+  detect_head: True
 
   eye_closure_method: 2
   eye_closure_threshold: 0.2
   main_threshold_perc: 0.75
   gray_zone_perc: 0.08
   num_ear_past_frames: 200
-  eye_alpha_val: 0.35
+  eye_alpha_val: 0.05
+
+  # pose_angles_detection_frequency: 3
+  # pitch_method: 1
+  # head_nod_threshold: 45
+  # head_nod_threshold_perc: 0.85
+  # num_past_frames_pitch: 1
+  # gray_zone_pitch: 0.15
+  # head_nod_y_min_threshold: 0.1
+  # num_frames_nose_tip_y: 100
+  # num_frames_new_head_nod: 15
 
   pose_angles_detection_frequency: 3
   pitch_method: 1
-  head_nod_threshold: 45
-  head_nod_threshold_perc: 0.85
-  num_past_frames_pitch: 1
-  gray_zone_pitch: 0.15
+  head_nod_threshold: 70
+  head_nod_threshold_perc: 0.8
+  num_past_frames_pitch: 5
+  num_past_frames_th: 1200
+  gray_zone_pitch: 0.08
   head_nod_y_min_threshold: 0.1
   num_frames_nose_tip_y: 100
   num_frames_new_head_nod: 15
+
 
 
   num_frames_dynamic_avg: 1800
   num_frames_lag_ignore: 15
 
   mouth_closure_method: 2
-  mouth_yawn_threshold: 0.4
-  gray_zone_mouth: 0.05
-  num_past_frames_mouth: 40
+  mouth_yawn_threshold: 0.45
+  gray_zone_mouth: 0.23
+  num_past_frames_mouth: 0
 
   yawn_y_min_threshold: 0.1
   num_frames_mouth_top_y: 100
@@ -139,8 +138,10 @@ metric_obtention:
     - num_blinks
     - num_yawns
     - yawns_per_minute
+    - yawn_frequency
     - head_nod_count
     - head_nods_per_minute
+    - head_nod_frequency
     - head_nod
     - yawn
     - open_eyes

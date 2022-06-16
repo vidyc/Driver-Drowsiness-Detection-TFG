@@ -101,7 +101,7 @@ def draw_eye_landmarks(img, face_landmarks, eye_indexes: dict):
             for ind in landmarks:
                 point = face_landmarks[ind]
                 point = (int(point.x*width), int(point.y*height))
-                res_img = cv2.circle(res_img, point, radius=2, color=(0, 0, 255), thickness=-1)
+                res_img = cv2.circle(res_img, point, radius=1, color=(0, 0, 255), thickness=-1)
                 #res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.1)
 
     return res_img
@@ -113,7 +113,7 @@ def draw_lip_landmarks(img, face_landmarks, lip_indexes: dict):
         for ind in landmarks:
             point = face_landmarks[ind]
             point = (int(point.x*width), int(point.y*height))
-            res_img = cv2.circle(res_img, point, radius=2, color=(0, 0, 255), thickness=-1)
+            res_img = cv2.circle(res_img, point, radius=1, color=(0, 0, 255), thickness=-1)
             #res_img = cv2.putText(res_img, f"{ind}", point, color=(0, 255, 0), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=0.1)
 
     return res_img
@@ -365,7 +365,7 @@ def process_frame(frame, config, eyes=True, mouth=True, head=True, expected_ear=
         
             open_eyes = image_analysis.check_eyes_open(mean_ear, threshold, gray_zone, previous_eye_state)
             drawn_frame = draw_eye_landmarks(drawn_frame, face_landmarks, {"eye": closer_eye_indexes})
-            drawn_frame = draw_iris_landmarks(drawn_frame, face_landmarks, {"iris": iris_indexes[closer_eye]})
+            # drawn_frame = draw_iris_landmarks(drawn_frame, face_landmarks, {"iris": iris_indexes[closer_eye]})
         else:
             ear = 0
             ear1 = 0
@@ -680,6 +680,8 @@ def compute_global_metrics(frame_metrics: dict, periodical_data: dict, config: d
     
     # global_metrics["mean_ear"] = periodical_data["sum_ear"] / periodical_data["frame_count"]
     global_metrics["blink_frequency"] = periodical_data["num_blinks"] / periodical_data["frame_count"]
+    global_metrics["yawn_frequency"] = periodical_data["num_yawns"] / periodical_data["frame_count"]
+    global_metrics["head_nod_frequency"] = periodical_data["head_nod_count"] / periodical_data["frame_count"]
     # global_metrics["blinks_per_minute"] = periodical_data["num_blinks"] * frames_per_minute / periodical_data["frame_count"]
     # global_metrics["perclos"] = periodical_data["closed_eye_frame_count"] / periodical_data["frame_count"]
     global_metrics["current_time_closed_eyes"] = periodical_data["current_frames_closed_eyes"] / fps
@@ -878,8 +880,8 @@ def obtencion_metricas_locales_frame(row, index_dict, periodical_data, config):
         pitch_values_to_analyze = last_pitch_values[-pitch_last:]
         mean_pitch = (sum(pitch_values_to_analyze) + pitch) / (pitch_last + 1)
     
-    if last_pitch_values != []:
-        head_nod_threshold = head_nod_threshold_perc * sum(last_pitch_values) / len(last_pitch_values)
+    # if last_pitch_values != []:
+    #     head_nod_threshold = head_nod_threshold_perc * sum(last_pitch_values) / len(last_pitch_values)
 
     nose_tip_y = row[index_dict["nose_tip_y"]]
     possible_head_nod = True #not eye_state
@@ -891,9 +893,11 @@ def obtencion_metricas_locales_frame(row, index_dict, periodical_data, config):
     head_nod = False
     if possible_head_nod:
         # head_nod = image_analysis.check_head_nod(mean_pitch, head_nod_threshold)
-        upper_threshold = head_nod_threshold * (1 + gray_zone_pitch)
-        lower_threshold = head_nod_threshold * (1 - gray_zone_pitch)
-        if mean_pitch < lower_threshold:
+        # upper_threshold = head_nod_threshold * (1 + gray_zone_pitch)
+        # lower_threshold = head_nod_threshold * (1 - gray_zone_pitch)
+        upper_threshold = head_nod_threshold + gray_zone_pitch
+        lower_threshold = head_nod_threshold - gray_zone_pitch
+        if mean_pitch <= lower_threshold:
             head_nod = True
         elif mean_pitch > upper_threshold:
             head_nod = False
